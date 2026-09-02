@@ -1,0 +1,19 @@
+{
+  "name": "@svrgn/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "scripts": {
+    "build": "tauri build",
+    "dev": "tauri dev",
+    "info": "tauri info",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}
