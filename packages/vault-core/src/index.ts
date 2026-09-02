@@ -1,1 +1,3 @@
-export const VAULT_FORMAT_VERSION = 1
+export * from "./model";
+export * from "./operations";
+export * from "./vault";

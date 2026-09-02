@@ -12,9 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@noble/ciphers": "2.4.0",
-    "@noble/hashes": "2.4.0",
-    "effect": "3.22.1"
+    "effect": "3.22.1",
+    "libsodium-wrappers-sumo": "0.8.4"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
