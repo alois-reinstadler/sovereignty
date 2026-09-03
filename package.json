@@ -1,15 +1,20 @@
 {
   "name": "svrgn",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "packageManager": "pnpm@11.24.0",
-  "scripts": {
-    "build": "pnpm --filter @svrgn/web build",
-    "build:desktop": "pnpm --filter @svrgn/desktop build",
-    "check": "pnpm --recursive --if-present check",
-    "dev": "pnpm --filter @svrgn/web dev",
-    "test": "pnpm --recursive --if-present test",
-    "typecheck": "pnpm --recursive --if-present typecheck"
-  }
+	"version": "0.0.0",
+	"type": "module",
+	"packageManager": "pnpm@11.24.0",
+	"engines": {
+		"node": ">=24"
+	},
+	"scripts": {
+		"audit:high": "pnpm audit --audit-level high",
+		"build": "pnpm --filter @svrgn/web build",
+		"build:desktop": "pnpm --filter @svrgn/desktop build",
+		"check": "pnpm --recursive --if-present check",
+		"dev": "pnpm --filter @svrgn/web dev",
+		"routes:check": "pnpm build && git diff --exit-code -- apps/web/src/routeTree.gen.ts",
+		"test": "pnpm --recursive --if-present test",
+		"typecheck": "pnpm --recursive --if-present typecheck"
+	}
 }
