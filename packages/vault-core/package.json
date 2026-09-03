@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@svrgn/sync-protocol": "workspace:*",
     "effect": "3.22.1",
     "libsodium-wrappers-sumo": "0.8.4"
   },

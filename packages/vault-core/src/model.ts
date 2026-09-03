@@ -63,6 +63,22 @@ export interface CreatedVault {
 	envelope: EncryptedVaultEnvelope;
 }
 
+export interface LoginRecordPlaintext {
+	schemaVersion: 1;
+	kind: "login";
+	item: VaultItem;
+}
+
+export interface TombstoneRecordPlaintext {
+	schemaVersion: 1;
+	kind: "tombstone";
+	deletedAt: string;
+}
+
+export type VaultRecordPlaintext =
+	| LoginRecordPlaintext
+	| TombstoneRecordPlaintext;
+
 export class VaultAuthenticationError extends Data.TaggedError(
 	"VaultAuthenticationError",
 )<{
