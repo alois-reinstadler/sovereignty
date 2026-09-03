@@ -38,7 +38,7 @@ export function ItemForm({
 		const password =
 			generatorMode === "password"
 				? generatePassword({ length, symbols })
-				: generatePassphrase(Math.max(3, Math.round(length / 4)));
+				: generatePassphrase(Math.max(6, Math.round(length / 4)));
 		update("password", password);
 	};
 
@@ -119,7 +119,10 @@ export function ItemForm({
 							</div>
 							<SegmentedControl
 								value={generatorMode}
-								onChange={setGeneratorMode}
+								onChange={(value) => {
+									setGeneratorMode(value);
+									setLength(value === "passphrase" ? 24 : 20);
+								}}
 								label="Generator type"
 								size="sm"
 							>
@@ -131,8 +134,8 @@ export function ItemForm({
 							label={generatorMode === "password" ? "Length" : "Word count"}
 							value={length}
 							onChange={setLength}
-							min={generatorMode === "password" ? 12 : 12}
-							max={generatorMode === "password" ? 40 : 28}
+							min={generatorMode === "password" ? 12 : 24}
+							max={generatorMode === "password" ? 40 : 40}
 							step={generatorMode === "password" ? 1 : 4}
 							formatValue={(value) =>
 								generatorMode === "password"

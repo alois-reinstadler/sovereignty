@@ -12,7 +12,9 @@ describe("generatePassphrase", () => {
 				return array;
 			});
 
-		expect(generatePassphrase(4)).toBe("amber-amber-amber-amber");
+		expect(generatePassphrase(6)).toBe(
+			"abandon-abandon-abandon-abandon-abandon-abandon",
+		);
 		random.mockRestore();
 	});
 
@@ -20,5 +22,11 @@ describe("generatePassphrase", () => {
 		const passphrase = generatePassphrase(7);
 		expect(passphrase.split("-")).toHaveLength(7);
 		expect(passphrase).not.toMatch(/(^-|-$|--)/);
+	});
+
+	it("rejects passphrases with too little entropy", () => {
+		expect(() => generatePassphrase(5)).toThrowError(
+			"Passphrases must contain between 6 and 10 words",
+		);
 	});
 });

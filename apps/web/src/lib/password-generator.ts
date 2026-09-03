@@ -1,46 +1,26 @@
-const WORDS = [
-	"amber",
-	"atlas",
-	"birch",
-	"breeze",
-	"cedar",
-	"comet",
-	"coral",
-	"delta",
-	"ember",
-	"fern",
-	"fjord",
-	"harbor",
-	"indigo",
-	"jungle",
-	"lumen",
-	"maple",
-	"meadow",
-	"nova",
-	"orbit",
-	"pebble",
-	"quartz",
-	"river",
-	"saffron",
-	"summit",
-	"timber",
-	"violet",
-	"willow",
-	"zephyr",
-] as const;
+import { wordlist } from "@scure/bip39/wordlists/english.js";
 
 function secureIndex(max: number): number {
-	if (max <= 0 || max > 256) throw new Error("Invalid random range");
-	const limit = Math.floor(256 / max) * max;
-	const bytes = new Uint8Array(1);
-	do crypto.getRandomValues(bytes);
-	while ((bytes[0] ?? 0) >= limit);
-	return (bytes[0] ?? 0) % max;
+	if (!Number.isSafeInteger(max) || max <= 0 || max > 0x1_0000_0000) {
+		throw new Error("Invalid random range");
+	}
+	const range = 0x1_0000_0000;
+	const limit = range - (range % max);
+	const bytes = new Uint8Array(4);
+	const view = new DataView(bytes.buffer);
+	while (true) {
+		crypto.getRandomValues(bytes);
+		const candidate = view.getUint32(0);
+		if (candidate < limit) return candidate % max;
+	}
 }
 
 export function generatePassphrase(words: number): string {
+	if (!Number.isSafeInteger(words) || words < 6 || words > 10) {
+		throw new Error("Passphrases must contain between 6 and 10 words");
+	}
 	return Array.from(
 		{ length: words },
-		() => WORDS[secureIndex(WORDS.length)],
+		() => wordlist[secureIndex(wordlist.length)],
 	).join("-");
 }

@@ -40,6 +40,10 @@ pnpm test
 pnpm build
 ```
 
+Build the native desktop package separately with `pnpm build:desktop` after
+installing Rust and the platform dependencies listed in
+[`apps/desktop/README.md`](./apps/desktop/README.md).
+
 ## Principles
 
 - UI copy is English; code identifiers are English.

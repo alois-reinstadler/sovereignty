@@ -24,11 +24,20 @@ export const Route = createRootRoute({
 				name: "description",
 				content: "A local-first, open source password manager.",
 			},
+			{
+				name: "theme-color",
+				content: "#0d1113",
+			},
 		],
 		links: [
 			{
 				rel: "stylesheet",
 				href: appCss,
+			},
+			{
+				rel: "icon",
+				type: "image/svg+xml",
+				href: "/favicon.svg",
 			},
 		],
 	}),
