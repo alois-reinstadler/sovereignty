@@ -1,5 +1,6 @@
 import {
 	addVaultItem,
+	type CreatedVault,
 	createVault,
 	createVaultItem,
 	destroyVaultSession,
@@ -18,17 +19,77 @@ import type { UnlockedVault, VaultDocument, VaultItem } from "./models";
 
 export const VAULT_STORAGE_KEY = "svrgn.vault.envelope.v1";
 
-const readStoredEnvelope = (): EncryptedVaultEnvelope | null => {
-	const serialized = localStorage.getItem(VAULT_STORAGE_KEY);
-	return serialized ? parseEncryptedVault(serialized) : null;
-};
+export type LocalVaultStorage = Pick<Storage, "getItem" | "setItem">;
 
-export function hasStoredVault(): boolean {
-	return localStorage.getItem(VAULT_STORAGE_KEY) !== null;
+export class LocalVaultStorageError extends Error {
+	readonly operation: "read" | "write" | "parse";
+
+	constructor(
+		operation: "read" | "write" | "parse",
+		message: string,
+		cause?: unknown,
+	) {
+		super(message, { cause });
+		this.name = "LocalVaultStorageError";
+		this.operation = operation;
+	}
 }
 
-const storeEnvelope = (envelope: EncryptedVaultEnvelope): void => {
-	localStorage.setItem(VAULT_STORAGE_KEY, serializeEncryptedVault(envelope));
+const browserStorage = (): LocalVaultStorage => {
+	try {
+		return globalThis.localStorage;
+	} catch (cause) {
+		throw new LocalVaultStorageError(
+			"read",
+			"Browser storage is unavailable. Allow site storage and try again.",
+			cause,
+		);
+	}
+};
+
+const readStoredEnvelope = (
+	storage: LocalVaultStorage = browserStorage(),
+): EncryptedVaultEnvelope | null => {
+	let serialized: string | null;
+	try {
+		serialized = storage.getItem(VAULT_STORAGE_KEY);
+	} catch (cause) {
+		throw new LocalVaultStorageError(
+			"read",
+			"Browser storage is unavailable. Allow site storage and try again.",
+			cause,
+		);
+	}
+
+	if (!serialized) return null;
+	try {
+		return parseEncryptedVault(serialized);
+	} catch (cause) {
+		throw new LocalVaultStorageError(
+			"parse",
+			"The stored vault is damaged or uses an unsupported format. Its encrypted data was not changed.",
+			cause,
+		);
+	}
+};
+
+export function hasStoredVault(storage?: LocalVaultStorage): boolean {
+	return readStoredEnvelope(storage) !== null;
+}
+
+const storeEnvelope = (
+	envelope: EncryptedVaultEnvelope,
+	storage: LocalVaultStorage = browserStorage(),
+): void => {
+	try {
+		storage.setItem(VAULT_STORAGE_KEY, serializeEncryptedVault(envelope));
+	} catch (cause) {
+		throw new LocalVaultStorageError(
+			"write",
+			"The encrypted vault could not be saved because browser storage is unavailable or full.",
+			cause,
+		);
+	}
 };
 
 interface VaultLifecycle {
@@ -40,16 +101,18 @@ interface VaultLifecycle {
 	destroy: (session: VaultSession) => void;
 }
 
-const defaultVaultLifecycle: VaultLifecycle = {
+const makeDefaultVaultLifecycle = (
+	storage?: LocalVaultStorage,
+): VaultLifecycle => ({
 	seal: (session, envelope) => Effect.runPromise(sealVault(session, envelope)),
-	store: storeEnvelope,
+	store: (envelope) => storeEnvelope(envelope, storage),
 	destroy: destroyVaultSession,
-};
+});
 
 export const makeUnlockedVault = (
 	initialSession: VaultSession,
 	initialEnvelope: EncryptedVaultEnvelope,
-	lifecycle: VaultLifecycle = defaultVaultLifecycle,
+	lifecycle: VaultLifecycle = makeDefaultVaultLifecycle(),
 ): UnlockedVault => {
 	let session = initialSession;
 	let envelope = initialEnvelope;
@@ -87,22 +150,40 @@ export const makeUnlockedVault = (
 	};
 };
 
+export function persistCreatedVault(
+	created: CreatedVault,
+	storage?: LocalVaultStorage,
+): UnlockedVault {
+	const lifecycle = makeDefaultVaultLifecycle(storage);
+	try {
+		lifecycle.store(created.envelope);
+	} catch (cause) {
+		lifecycle.destroy(created.session);
+		throw cause;
+	}
+	return makeUnlockedVault(created.session, created.envelope, lifecycle);
+}
+
 export async function createLocalVault(
 	password: string,
 ): Promise<UnlockedVault> {
 	const created = await Effect.runPromise(createVault(password));
-	storeEnvelope(created.envelope);
-	return makeUnlockedVault(created.session, created.envelope);
+	return persistCreatedVault(created);
 }
 
 export async function unlockLocalVault(
 	password: string,
+	storage?: LocalVaultStorage,
 ): Promise<UnlockedVault> {
-	const envelope = readStoredEnvelope();
+	const envelope = readStoredEnvelope(storage);
 	if (!envelope) throw new Error("No local vault was found.");
 	try {
 		const session = await Effect.runPromise(unlockVault(envelope, password));
-		return makeUnlockedVault(session, envelope);
+		return makeUnlockedVault(
+			session,
+			envelope,
+			makeDefaultVaultLifecycle(storage),
+		);
 	} catch {
 		throw new Error("The password is incorrect or the vault is damaged.");
 	}

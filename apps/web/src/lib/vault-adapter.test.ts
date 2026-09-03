@@ -1,11 +1,18 @@
 import type {
+	CreatedVault,
 	EncryptedVaultEnvelope,
 	VaultDocument,
 	VaultSession,
 } from "@svrgn/vault-core";
 import { describe, expect, it, vi } from "vitest";
 
-import { makeUnlockedVault } from "./vault-adapter";
+import {
+	hasStoredVault,
+	type LocalVaultStorage,
+	LocalVaultStorageError,
+	makeUnlockedVault,
+	persistCreatedVault,
+} from "./vault-adapter";
 
 const timestamp = "2026-09-03T12:00:00.000Z";
 
@@ -167,5 +174,92 @@ describe("unlocked vault lifecycle", () => {
 
 		expect(seal.mock.calls[1]?.[1]).toBe(initialEnvelope);
 		expect(store).toHaveBeenCalledTimes(2);
+	});
+
+	it("waits for a failed save before closing the last durable session", async () => {
+		const initialDocument = makeDocument(timestamp);
+		const nextDocument = makeDocument("2026-09-03T12:01:00.000Z");
+		const initialSession: VaultSession = {
+			vaultKey: new Uint8Array([9, 8, 7]),
+			document: initialDocument,
+		};
+		const sealResult = deferred<EncryptedVaultEnvelope>();
+		const destroyed: Array<VaultSession> = [];
+		const vault = makeUnlockedVault(initialSession, makeEnvelope(timestamp), {
+			seal: () => sealResult.promise,
+			store: vi.fn(),
+			destroy: (session) => {
+				destroyed.push(session);
+				session.vaultKey.fill(0);
+			},
+		});
+
+		const save = vault.seal(nextDocument);
+		const close = vault.close();
+		expect(destroyed).toHaveLength(0);
+
+		sealResult.reject(new Error("storage unavailable"));
+		await expect(save).rejects.toThrow("storage unavailable");
+		await expect(close).resolves.toBeUndefined();
+
+		expect(destroyed).toHaveLength(1);
+		expect(destroyed[0]?.document).toBe(initialDocument);
+		expect(initialSession.vaultKey).toEqual(new Uint8Array([0, 0, 0]));
+	});
+});
+
+describe("browser vault storage", () => {
+	const storage = (
+		getItem: LocalVaultStorage["getItem"],
+		setItem: LocalVaultStorage["setItem"] = vi.fn(),
+	): LocalVaultStorage => ({ getItem, setItem });
+
+	it("reports blocked browser storage as a recoverable read error", () => {
+		const blocked = storage(() => {
+			throw new DOMException("Access denied", "SecurityError");
+		});
+
+		expect(() => hasStoredVault(blocked)).toThrowError(
+			expect.objectContaining({
+				name: "LocalVaultStorageError",
+				operation: "read",
+			}),
+		);
+	});
+
+	it("reports a corrupt envelope without changing it", () => {
+		const getItem = vi.fn(() => "{not-json");
+		const setItem = vi.fn();
+
+		expect(() => hasStoredVault(storage(getItem, setItem))).toThrowError(
+			expect.objectContaining({
+				name: "LocalVaultStorageError",
+				operation: "parse",
+			}),
+		);
+		expect(setItem).not.toHaveBeenCalled();
+		expect(getItem).toHaveBeenCalledOnce();
+	});
+
+	it("destroys a newly created session when quota prevents its first save", () => {
+		const session: VaultSession = {
+			vaultKey: new Uint8Array([3, 2, 1]),
+			document: makeDocument(timestamp),
+		};
+		const created: CreatedVault = {
+			session,
+			envelope: makeEnvelope(timestamp),
+		};
+		const quotaLimited = storage(
+			vi.fn(() => null),
+			vi.fn(() => {
+				throw new DOMException("Quota exceeded", "QuotaExceededError");
+			}),
+		);
+
+		expect(() => persistCreatedVault(created, quotaLimited)).toThrowError(
+			LocalVaultStorageError,
+		);
+		expect(session.vaultKey).toEqual(new Uint8Array([0, 0, 0]));
 	});
 });

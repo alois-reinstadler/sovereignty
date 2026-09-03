@@ -32,6 +32,7 @@ interface ClipboardEntry {
 
 export function VaultApp() {
 	const [status, setStatus] = useState<VaultStatus>("loading");
+	const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 	const [document, setDocument] = useState<VaultDocument | null>(null);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [filter, setFilter] = useState<"all" | "favourites">("all");
@@ -40,6 +41,7 @@ export function VaultApp() {
 	const [deleting, setDeleting] = useState<VaultItem | null>(null);
 	const [isWorking, setIsWorking] = useState(false);
 	const [isLocking, setIsLocking] = useState(false);
+	const [isPersisting, setIsPersisting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [autoLockMinutes, setAutoLockMinutes] = useState(5);
@@ -49,11 +51,26 @@ export function VaultApp() {
 	const sessionRef = useRef<UnlockedVault | null>(null);
 	const documentRef = useRef<VaultDocument | null>(null);
 	const lockingRef = useRef(false);
+	const persistingRef = useRef(false);
 	const clipboardEntryRef = useRef<ClipboardEntry | null>(null);
 
-	useEffect(() => {
-		setStatus(hasStoredVault() ? "locked" : "setup");
+	const bootstrap = useCallback(() => {
+		setBootstrapError(null);
+		setStatus("loading");
+		try {
+			setStatus(hasStoredVault() ? "locked" : "setup");
+		} catch (cause) {
+			setBootstrapError(
+				cause instanceof Error
+					? cause.message
+					: "The local vault could not be read from this browser.",
+			);
+		}
 	}, []);
+
+	useEffect(() => {
+		bootstrap();
+	}, [bootstrap]);
 
 	useEffect(() => {
 		const focusSearch = (event: KeyboardEvent) => {
@@ -85,6 +102,12 @@ export function VaultApp() {
 
 	const lock = useCallback(async () => {
 		if (lockingRef.current) return;
+		if (persistingRef.current) {
+			setNotice(
+				"Wait for the current save to finish before locking the vault.",
+			);
+			return;
+		}
 		lockingRef.current = true;
 		setIsLocking(true);
 		const unlocked = sessionRef.current;
@@ -177,6 +200,12 @@ export function VaultApp() {
 		const unlocked = sessionRef.current;
 		const current = documentRef.current;
 		if (!unlocked || !current || lockingRef.current) return false;
+		if (persistingRef.current) {
+			setNotice(
+				"Wait for the current save to finish before making another change.",
+			);
+			return false;
+		}
 
 		let next: VaultDocument;
 		try {
@@ -186,16 +215,22 @@ export function VaultApp() {
 			return false;
 		}
 
-		documentRef.current = next;
-		setDocument(next);
+		persistingRef.current = true;
+		setIsPersisting(true);
 		try {
 			await saveLocalVault(unlocked, next);
+			documentRef.current = next;
+			setDocument(next);
+			return true;
 		} catch {
 			setNotice(
-				"Changes are in memory but could not be saved to this browser.",
+				"The change could not be saved and was not applied. Check browser storage and try again.",
 			);
+			return false;
+		} finally {
+			persistingRef.current = false;
+			setIsPersisting(false);
 		}
-		return true;
 	};
 
 	const selectedItem =
@@ -233,6 +268,33 @@ export function VaultApp() {
 			setNotice("Clipboard access was blocked by the browser.");
 		}
 	};
+
+	if (bootstrapError) {
+		return (
+			<main className="auth-shell">
+				<section className="auth-column">
+					<Brand />
+					<Card className="auth-card" padding={6} elevation="high">
+						<div className="auth-heading" role="alert">
+							<span className="eyebrow">LOCAL STORAGE ERROR</span>
+							<h1>Your vault could not be opened</h1>
+							<p>{bootstrapError}</p>
+							<p>
+								Svrgn did not modify the stored data. Restore browser storage
+								access, then retry.
+							</p>
+						</div>
+						<Button
+							label="Retry reading vault"
+							variant="primary"
+							width="100%"
+							onClick={bootstrap}
+						/>
+					</Card>
+				</section>
+			</main>
+		);
+	}
 
 	if (status === "loading") {
 		return (
@@ -317,7 +379,7 @@ export function VaultApp() {
 					variant="ghost"
 					icon={<span>⌁</span>}
 					onClick={() => void lock()}
-					isDisabled={isLocking}
+					isDisabled={isLocking || isPersisting}
 					width="100%"
 				/>
 			</aside>
@@ -335,7 +397,7 @@ export function VaultApp() {
 						onClick={() => {
 							if (!lockingRef.current) setEditing(createLogin());
 						}}
-						isDisabled={isLocking}
+						isDisabled={isLocking || isPersisting}
 					/>
 				</header>
 				<div className="search-wrap">
@@ -395,7 +457,7 @@ export function VaultApp() {
 									onClick={() => {
 										if (!lockingRef.current) setEditing(createLogin());
 									}}
-									isDisabled={isLocking}
+									isDisabled={isLocking || isPersisting}
 								/>
 							)}
 						</div>
@@ -408,7 +470,7 @@ export function VaultApp() {
 			>
 				<ItemDetail
 					item={selectedItem}
-					isDisabled={isLocking}
+					isDisabled={isLocking || isPersisting}
 					onBack={() => setMobileDetail(false)}
 					onCopy={copy}
 					onEdit={(item) => {
@@ -490,7 +552,7 @@ export function VaultApp() {
 										setMobileDetail(false);
 									}
 								}}
-								isDisabled={isLocking}
+								isDisabled={isLocking || isPersisting}
 							/>
 						</div>
 					</Card>
@@ -518,13 +580,13 @@ export function VaultApp() {
 					onClick={() => {
 						if (!lockingRef.current) setEditing(createLogin());
 					}}
-					isDisabled={isLocking}
+					isDisabled={isLocking || isPersisting}
 				/>
 				<Button
 					label="Lock vault"
 					variant="ghost"
 					onClick={() => void lock()}
-					isDisabled={isLocking}
+					isDisabled={isLocking || isPersisting}
 				/>
 			</div>
 		</main>
