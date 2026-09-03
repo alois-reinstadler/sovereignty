@@ -21,9 +21,11 @@ export function ItemForm({
 }: {
 	initial: VaultItem;
 	onCancel: () => void;
-	onSave: (item: VaultItem) => void;
+	onSave: (item: VaultItem) => Promise<void>;
 }) {
 	const [draft, setDraft] = useState(initial);
+	const [showPassword, setShowPassword] = useState(false);
+	const [isSaving, setIsSaving] = useState(false);
 	const [generatorMode, setGeneratorMode] = useState("password");
 	const [length, setLength] = useState(20);
 	const [symbols, setSymbols] = useState(true);
@@ -42,14 +44,19 @@ export function ItemForm({
 		update("password", password);
 	};
 
-	const submit = (event: FormEvent) => {
+	const submit = async (event: FormEvent) => {
 		event.preventDefault();
-		if (!draft.title.trim()) return;
-		onSave({
-			...draft,
-			title: draft.title.trim(),
-			updatedAt: new Date().toISOString(),
-		});
+		if (!draft.title.trim() || isSaving) return;
+		setIsSaving(true);
+		try {
+			await onSave({
+				...draft,
+				title: draft.title.trim(),
+				updatedAt: new Date().toISOString(),
+			});
+		} finally {
+			setIsSaving(false);
+		}
 	};
 
 	return (
@@ -96,12 +103,26 @@ export function ItemForm({
 				</div>
 
 				<div className="form-password-row">
-					<TextInput
-						label="Password"
-						value={draft.password}
-						onChange={(value) => update("password", value)}
-						width="100%"
-					/>
+					<div className="password-field-wrap">
+						<TextInput
+							label="Password"
+							type={showPassword ? "text" : "password"}
+							{...{ autoComplete: "new-password" }}
+							value={draft.password}
+							onChange={(value) => update("password", value)}
+							width="100%"
+						/>
+						<Button
+							label={showPassword ? "Hide password" : "Reveal password"}
+							variant="ghost"
+							type="button"
+							size="sm"
+							isIconOnly
+							icon={<Icon icon={showPassword ? "eyeSlash" : "info"} />}
+							onClick={() => setShowPassword((value) => !value)}
+							className="password-toggle"
+						/>
+					</div>
 					<Button
 						label="Password generator"
 						variant="secondary"
@@ -171,12 +192,18 @@ export function ItemForm({
 				/>
 
 				<div className="form-actions">
-					<Button label="Cancel" variant="ghost" onClick={onCancel} />
+					<Button
+						label="Cancel"
+						variant="ghost"
+						onClick={onCancel}
+						isDisabled={isSaving}
+					/>
 					<Button
 						label="Save login"
 						variant="primary"
 						type="submit"
-						isDisabled={!draft.title.trim()}
+						isDisabled={!draft.title.trim() || isSaving}
+						isLoading={isSaving}
 					/>
 				</div>
 			</Stack>

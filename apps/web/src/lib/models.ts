@@ -11,7 +11,7 @@ export type VaultEnvelope = EncryptedVaultEnvelope;
 export type UnlockedVault = {
 	document: VaultDocument;
 	seal: (document: VaultDocument) => Promise<void>;
-	destroy: () => void;
+	close: () => Promise<void>;
 };
 
 export type VaultStatus = "loading" | "setup" | "locked" | "unlocked";

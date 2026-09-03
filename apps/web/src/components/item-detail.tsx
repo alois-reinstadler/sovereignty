@@ -5,22 +5,25 @@ import type { VaultItem } from "#/lib/models";
 
 type ItemDetailProps = {
 	item: VaultItem | null;
+	isDisabled?: boolean;
 	onBack: () => void;
 	onCopy: (value: string, label: string) => void;
 	onDelete: (item: VaultItem) => void;
 	onEdit: (item: VaultItem) => void;
-	onFavourite: (item: VaultItem) => void;
+	onFavourite: (item: VaultItem) => Promise<void>;
 };
 
 export function ItemDetail({
 	item,
+	isDisabled = false,
 	onBack,
 	onCopy,
 	onDelete,
 	onEdit,
 	onFavourite,
 }: ItemDetailProps) {
-	const [revealed, setRevealed] = useState(false);
+	const [revealedItemId, setRevealedItemId] = useState<string | null>(null);
+	const revealed = item !== null && revealedItemId === item.id;
 
 	if (!item) {
 		return (
@@ -54,17 +57,20 @@ export function ItemDetail({
 						variant="ghost"
 						isIconOnly
 						icon={<span aria-hidden="true">{item.favorite ? "★" : "☆"}</span>}
-						onClick={() => onFavourite(item)}
+						onClick={async () => onFavourite(item)}
+						isDisabled={isDisabled}
 					/>
 					<Button
 						label="Edit"
 						variant="secondary"
 						onClick={() => onEdit(item)}
+						isDisabled={isDisabled}
 					/>
 					<Button
 						label="Delete"
 						variant="ghost"
 						onClick={() => onDelete(item)}
+						isDisabled={isDisabled}
 					/>
 				</div>
 			</div>
@@ -117,7 +123,11 @@ export function ItemDetail({
 									variant="ghost"
 									isIconOnly
 									icon={<Icon icon={revealed ? "eyeSlash" : "info"} />}
-									onClick={() => setRevealed((value) => !value)}
+									onClick={() =>
+										setRevealedItemId((current) =>
+											current === item.id ? null : item.id,
+										)
+									}
 								/>
 							) : null
 						}

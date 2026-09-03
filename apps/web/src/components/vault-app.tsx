@@ -23,9 +23,15 @@ import { ItemForm } from "./item-form";
 
 const AUTO_LOCK_OPTIONS = [1, 5, 15, 30] as const;
 
+type DocumentUpdate = (current: VaultDocument) => VaultDocument;
+
+interface ClipboardEntry {
+	value: string;
+	timer: number;
+}
+
 export function VaultApp() {
 	const [status, setStatus] = useState<VaultStatus>("loading");
-	const [session, setSession] = useState<UnlockedVault | null>(null);
 	const [document, setDocument] = useState<VaultDocument | null>(null);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [filter, setFilter] = useState<"all" | "favourites">("all");
@@ -33,12 +39,17 @@ export function VaultApp() {
 	const [editing, setEditing] = useState<VaultItem | null>(null);
 	const [deleting, setDeleting] = useState<VaultItem | null>(null);
 	const [isWorking, setIsWorking] = useState(false);
+	const [isLocking, setIsLocking] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [autoLockMinutes, setAutoLockMinutes] = useState(5);
 	const [mobileDetail, setMobileDetail] = useState(false);
 	const lastActivity = useRef(Date.now());
 	const searchInput = useRef<HTMLInputElement>(null);
+	const sessionRef = useRef<UnlockedVault | null>(null);
+	const documentRef = useRef<VaultDocument | null>(null);
+	const lockingRef = useRef(false);
+	const clipboardEntryRef = useRef<ClipboardEntry | null>(null);
 
 	useEffect(() => {
 		setStatus(hasStoredVault() ? "locked" : "setup");
@@ -58,15 +69,46 @@ export function VaultApp() {
 		return () => window.removeEventListener("keydown", focusSearch);
 	}, []);
 
-	const lock = useCallback(() => {
-		session?.destroy();
-		setSession(null);
-		setDocument(null);
-		setSelectedId(null);
-		setEditing(null);
-		setStatus("locked");
-		setNotice(null);
-	}, [session]);
+	const clearClipboardEntry = useCallback(async (entry: ClipboardEntry) => {
+		window.clearTimeout(entry.timer);
+		try {
+			const current = await navigator.clipboard.readText();
+			if (clipboardEntryRef.current === entry && current === entry.value) {
+				await navigator.clipboard.writeText("");
+			}
+		} catch {
+			// Clipboard reads and writes are best-effort in browser security models.
+		} finally {
+			if (clipboardEntryRef.current === entry) clipboardEntryRef.current = null;
+		}
+	}, []);
+
+	const lock = useCallback(async () => {
+		if (lockingRef.current) return;
+		lockingRef.current = true;
+		setIsLocking(true);
+		const unlocked = sessionRef.current;
+		const clipboardEntry = clipboardEntryRef.current;
+		try {
+			await Promise.allSettled([
+				unlocked?.close() ?? Promise.resolve(),
+				clipboardEntry
+					? clearClipboardEntry(clipboardEntry)
+					: Promise.resolve(),
+			]);
+		} finally {
+			sessionRef.current = null;
+			documentRef.current = null;
+			setDocument(null);
+			setSelectedId(null);
+			setEditing(null);
+			setDeleting(null);
+			setStatus("locked");
+			setNotice(null);
+			setIsLocking(false);
+			lockingRef.current = false;
+		}
+	}, [clearClipboardEntry]);
 
 	useEffect(() => {
 		if (status !== "unlocked") return;
@@ -81,11 +123,30 @@ export function VaultApp() {
 		for (const event of events)
 			window.addEventListener(event, track, { passive: true });
 		const timer = window.setInterval(() => {
-			if (Date.now() - lastActivity.current >= autoLockMinutes * 60_000) lock();
+			if (Date.now() - lastActivity.current >= autoLockMinutes * 60_000) {
+				void lock();
+			}
 		}, 5_000);
+		const checkInactivity = () => {
+			if (Date.now() - lastActivity.current >= autoLockMinutes * 60_000) {
+				void lock();
+			}
+		};
+		const lockOnPageHide = () => {
+			void lock();
+		};
+		globalThis.document.addEventListener("visibilitychange", checkInactivity);
+		window.addEventListener("focus", checkInactivity);
+		window.addEventListener("pagehide", lockOnPageHide);
 		return () => {
 			window.clearInterval(timer);
 			for (const event of events) window.removeEventListener(event, track);
+			globalThis.document.removeEventListener(
+				"visibilitychange",
+				checkInactivity,
+			);
+			window.removeEventListener("focus", checkInactivity);
+			window.removeEventListener("pagehide", lockOnPageHide);
 		};
 	}, [autoLockMinutes, lock, status]);
 
@@ -96,7 +157,8 @@ export function VaultApp() {
 			const unlocked = create
 				? await createLocalVault(password)
 				: await unlockLocalVault(password);
-			setSession(unlocked);
+			sessionRef.current = unlocked;
+			documentRef.current = unlocked.document;
 			setDocument(unlocked.document);
 			setStatus("unlocked");
 			lastActivity.current = Date.now();
@@ -111,16 +173,29 @@ export function VaultApp() {
 		}
 	};
 
-	const persist = async (next: VaultDocument) => {
-		if (!session) return;
+	const persist = async (update: DocumentUpdate): Promise<boolean> => {
+		const unlocked = sessionRef.current;
+		const current = documentRef.current;
+		if (!unlocked || !current || lockingRef.current) return false;
+
+		let next: VaultDocument;
+		try {
+			next = update(current);
+		} catch {
+			setNotice("The requested vault change could not be applied.");
+			return false;
+		}
+
+		documentRef.current = next;
 		setDocument(next);
 		try {
-			await saveLocalVault(session, next);
+			await saveLocalVault(unlocked, next);
 		} catch {
 			setNotice(
 				"Changes are in memory but could not be saved to this browser.",
 			);
 		}
+		return true;
 	};
 
 	const selectedItem =
@@ -141,17 +216,19 @@ export function VaultApp() {
 	}, [document, filter, query]);
 
 	const copy = async (value: string, label: string) => {
+		if (lockingRef.current) return;
 		try {
 			await navigator.clipboard.writeText(value);
-			setNotice(`${label} copied. Clipboard clears in 30 seconds.`);
-			window.setTimeout(async () => {
-				try {
-					const current = await navigator.clipboard.readText();
-					if (current === value) await navigator.clipboard.writeText("");
-				} catch {
-					// Browsers may deny clipboard reads once focus or permission changes.
-				}
+			const previous = clipboardEntryRef.current;
+			if (previous) window.clearTimeout(previous.timer);
+			const entry: ClipboardEntry = { value, timer: 0 };
+			entry.timer = window.setTimeout(() => {
+				void clearClipboardEntry(entry);
 			}, 30_000);
+			clipboardEntryRef.current = entry;
+			setNotice(
+				`${label} copied. Clipboard clearing will be attempted in 30 seconds.`,
+			);
 		} catch {
 			setNotice("Clipboard access was blocked by the browser.");
 		}
@@ -161,6 +238,14 @@ export function VaultApp() {
 		return (
 			<main className="loading-screen">
 				<Spinner label="Loading local vault" size="lg" />
+			</main>
+		);
+	}
+
+	if (isLocking) {
+		return (
+			<main className="loading-screen">
+				<Spinner label="Locking vault" size="lg" />
 			</main>
 		);
 	}
@@ -231,7 +316,8 @@ export function VaultApp() {
 					label="Lock vault"
 					variant="ghost"
 					icon={<span>⌁</span>}
-					onClick={lock}
+					onClick={() => void lock()}
+					isDisabled={isLocking}
 					width="100%"
 				/>
 			</aside>
@@ -246,7 +332,10 @@ export function VaultApp() {
 						label="New login"
 						variant="primary"
 						icon={<span aria-hidden="true">＋</span>}
-						onClick={() => setEditing(createLogin())}
+						onClick={() => {
+							if (!lockingRef.current) setEditing(createLogin());
+						}}
+						isDisabled={isLocking}
 					/>
 				</header>
 				<div className="search-wrap">
@@ -303,7 +392,10 @@ export function VaultApp() {
 								<Button
 									label="Create your first login"
 									variant="secondary"
-									onClick={() => setEditing(createLogin())}
+									onClick={() => {
+										if (!lockingRef.current) setEditing(createLogin());
+									}}
+									isDisabled={isLocking}
 								/>
 							)}
 						</div>
@@ -316,19 +408,25 @@ export function VaultApp() {
 			>
 				<ItemDetail
 					item={selectedItem}
+					isDisabled={isLocking}
 					onBack={() => setMobileDetail(false)}
 					onCopy={copy}
-					onEdit={setEditing}
-					onDelete={setDeleting}
-					onFavourite={(item) =>
-						persist(
-							replaceItem(document, {
-								...item,
-								favorite: !item.favorite,
-								updatedAt: new Date().toISOString(),
-							}),
-						)
-					}
+					onEdit={(item) => {
+						if (!lockingRef.current) setEditing(item);
+					}}
+					onDelete={(item) => {
+						if (!lockingRef.current) setDeleting(item);
+					}}
+					onFavourite={async (item) => {
+						await persist((current) => {
+							const latest = current.items.find(({ id }) => id === item.id);
+							if (!latest) return current;
+							return replaceItem(current, {
+								...latest,
+								favorite: !latest.favorite,
+							});
+						});
+					}}
 				/>
 			</section>
 
@@ -344,10 +442,14 @@ export function VaultApp() {
 						<ItemForm
 							initial={editing}
 							onCancel={() => setEditing(null)}
-							onSave={(item) => {
-								void persist(replaceItem(document, item));
-								setSelectedId(item.id);
-								setEditing(null);
+							onSave={async (item) => {
+								const applied = await persist((current) =>
+									replaceItem(current, item),
+								);
+								if (applied) {
+									setSelectedId(item.id);
+									setEditing(null);
+								}
 							}}
 						/>
 					</Card>
@@ -378,12 +480,17 @@ export function VaultApp() {
 							<Button
 								label="Delete login"
 								variant="destructive"
-								onClick={() => {
-									void persist(removeItem(document, deleting.id));
-									setSelectedId(null);
-									setDeleting(null);
-									setMobileDetail(false);
+								onClick={async () => {
+									const applied = await persist((current) =>
+										removeItem(current, deleting.id),
+									);
+									if (applied) {
+										setSelectedId(null);
+										setDeleting(null);
+										setMobileDetail(false);
+									}
 								}}
+								isDisabled={isLocking}
 							/>
 						</div>
 					</Card>
@@ -408,9 +515,17 @@ export function VaultApp() {
 				<Button
 					label="New login"
 					variant="primary"
-					onClick={() => setEditing(createLogin())}
+					onClick={() => {
+						if (!lockingRef.current) setEditing(createLogin());
+					}}
+					isDisabled={isLocking}
 				/>
-				<Button label="Lock vault" variant="ghost" onClick={lock} />
+				<Button
+					label="Lock vault"
+					variant="ghost"
+					onClick={() => void lock()}
+					isDisabled={isLocking}
+				/>
 			</div>
 		</main>
 	);
