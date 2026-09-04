@@ -17,7 +17,7 @@ export const SECURITY_HEADERS = {
 		"img-src 'self' data: blob:",
 		"media-src 'none'",
 		"object-src 'none'",
-		"script-src 'self' 'unsafe-inline'",
+		"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
 		"style-src 'self' 'unsafe-inline'",
 		"worker-src 'self' blob:",
 	].join("; "),

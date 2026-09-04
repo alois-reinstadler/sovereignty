@@ -19,6 +19,9 @@ describe("application security headers", () => {
 		expect(secured.headers.get("content-security-policy")).toContain(
 			"frame-ancestors 'none'",
 		);
+		expect(secured.headers.get("content-security-policy")).toContain(
+			"'wasm-unsafe-eval'",
+		);
 	});
 
 	it("defines every required browser policy", () => {
