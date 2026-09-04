@@ -18,10 +18,29 @@ describe("server environment", () => {
 			betterAuthUrl: "https://vault.example.test",
 			databaseUrl: validEnvironment.DATABASE_URL,
 			nodeEnv: "production",
+			passkeyOrigins: ["https://vault.example.test"],
+			passkeyRpId: "vault.example.test",
 			trustedOrigins: [
 				"https://vault.example.test",
 				"https://desktop.example.test",
 			],
+		});
+	});
+
+	it("accepts an explicit parent relying-party ID for trusted subdomains", () => {
+		expect(
+			parseServerEnvironment({
+				...validEnvironment,
+				PASSKEY_RP_ID: "example.test",
+				PASSKEY_ORIGINS:
+					"https://vault.example.test,https://desktop.example.test",
+			}),
+		).toMatchObject({
+			passkeyOrigins: [
+				"https://vault.example.test",
+				"https://desktop.example.test",
+			],
+			passkeyRpId: "example.test",
 		});
 	});
 
@@ -54,6 +73,27 @@ describe("server environment", () => {
 			},
 		],
 		[
+			"a passkey origin outside the trusted origins",
+			{
+				...validEnvironment,
+				PASSKEY_ORIGINS: "https://untrusted.example.test",
+			},
+		],
+		[
+			"a passkey origin outside the relying-party ID",
+			{
+				...validEnvironment,
+				PASSKEY_RP_ID: "other.example.test",
+			},
+		],
+		[
+			"a relying-party ID with a port",
+			{
+				...validEnvironment,
+				PASSKEY_RP_ID: "vault.example.test:443",
+			},
+		],
+		[
 			"plaintext production transport",
 			{
 				...validEnvironment,
@@ -75,5 +115,21 @@ describe("server environment", () => {
 				BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
 			}),
 		).toMatchObject({ betterAuthUrl: "http://localhost:3000" });
+	});
+
+	it("treats blank optional passkey overrides as defaults", () => {
+		expect(
+			parseServerEnvironment({
+				...validEnvironment,
+				NODE_ENV: "development",
+				BETTER_AUTH_URL: "http://localhost:3000",
+				BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
+				PASSKEY_RP_ID: " ",
+				PASSKEY_ORIGINS: " ",
+			}),
+		).toMatchObject({
+			passkeyOrigins: ["http://localhost:3000"],
+			passkeyRpId: "localhost",
+		});
 	});
 });

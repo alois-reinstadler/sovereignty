@@ -170,6 +170,9 @@ export function AuthScreen({
 					isDisabled={isWorking}
 					onImported={onImported}
 				/>
+				<a className="account-link" href="/account">
+					Sign in for encrypted sync and passkeys
+				</a>
 				<p className="preview-label">
 					DEVELOPMENT PREVIEW · NOT AUDITED FOR PRODUCTION USE
 				</p>

@@ -410,6 +410,9 @@ export function VaultApp() {
 						)
 					}
 				/>
+				<a className="account-link nav-account-link" href="/account">
+					Account &amp; passkeys
+				</a>
 				<Button
 					label="Lock vault"
 					variant="ghost"

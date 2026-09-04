@@ -22,6 +22,7 @@
   "dependencies": {
     "@astryxdesign/core": "0.5.2",
     "@astryxdesign/theme-neutral": "0.5.2",
+    "@better-auth/passkey": "1.7.2",
     "@scure/bip39": "2.4.0",
     "@stylexjs/stylex": "0.19.0",
     "@svrgn/vault-core": "workspace:*",

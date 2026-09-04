@@ -3,6 +3,8 @@ export interface ServerEnvironment {
 	readonly betterAuthUrl: string;
 	readonly databaseUrl: string;
 	readonly nodeEnv: "development" | "production" | "test";
+	readonly passkeyOrigins: ReadonlyArray<string>;
+	readonly passkeyRpId: string;
 	readonly trustedOrigins: ReadonlyArray<string>;
 }
 
@@ -41,6 +43,28 @@ const exactOrigin = (value: string, name: string): string => {
 	}
 	return url.origin;
 };
+
+const rpId = (value: string, name: string): string => {
+	const normalized = value.trim().toLocaleLowerCase("en");
+	if (
+		!normalized ||
+		normalized.includes(":") ||
+		normalized.includes("/") ||
+		normalized.startsWith(".") ||
+		normalized.endsWith(".")
+	) {
+		throw new ServerEnvironmentError(
+			`${name} must be a hostname without a port`,
+		);
+	}
+	return normalized;
+};
+
+const hostnameMatchesRpId = (
+	hostname: string,
+	relyingPartyId: string,
+): boolean =>
+	hostname === relyingPartyId || hostname.endsWith(`.${relyingPartyId}`);
 
 export const parseServerEnvironment = (
 	source: EnvironmentSource,
@@ -87,6 +111,28 @@ export const parseServerEnvironment = (
 		);
 	}
 
+	const passkeyRpId = rpId(
+		source.PASSKEY_RP_ID?.trim() || new URL(betterAuthUrl).hostname,
+		"PASSKEY_RP_ID",
+	);
+	const passkeyOrigins = (source.PASSKEY_ORIGINS?.trim() || betterAuthUrl)
+		.split(",")
+		.map((origin, index) =>
+			exactOrigin(origin.trim(), `PASSKEY_ORIGINS[${index}]`),
+		);
+	for (const origin of passkeyOrigins) {
+		if (!trustedOrigins.includes(origin)) {
+			throw new ServerEnvironmentError(
+				"PASSKEY_ORIGINS must be included in BETTER_AUTH_TRUSTED_ORIGINS",
+			);
+		}
+		if (!hostnameMatchesRpId(new URL(origin).hostname, passkeyRpId)) {
+			throw new ServerEnvironmentError(
+				"Every PASSKEY_ORIGINS hostname must equal or be a subdomain of PASSKEY_RP_ID",
+			);
+		}
+	}
+
 	if (nodeEnv === "production") {
 		for (const origin of trustedOrigins) {
 			const url = new URL(origin);
@@ -105,6 +151,8 @@ export const parseServerEnvironment = (
 		betterAuthUrl,
 		databaseUrl,
 		nodeEnv: nodeEnv as ServerEnvironment["nodeEnv"],
+		passkeyOrigins,
+		passkeyRpId,
 		trustedOrigins,
 	};
 };

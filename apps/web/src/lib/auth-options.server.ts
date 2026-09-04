@@ -1,3 +1,4 @@
+import { passkey } from "@better-auth/passkey";
 import type { BetterAuthOptions } from "better-auth";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import type { Pool } from "pg";
@@ -40,5 +41,12 @@ export const buildAuthOptions = (
 		},
 	},
 	// Required last so TanStack Start can apply response cookies correctly.
-	plugins: [tanstackStartCookies()],
+	plugins: [
+		passkey({
+			rpID: environment.passkeyRpId,
+			rpName: "Sovereignty",
+			origin: [...environment.passkeyOrigins],
+		}),
+		tanstackStartCookies(),
+	],
 });

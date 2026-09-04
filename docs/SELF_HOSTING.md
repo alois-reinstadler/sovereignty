@@ -34,6 +34,14 @@ Git. `BETTER_AUTH_URL` must be the exact public origin without a trailing slash.
 `BETTER_AUTH_TRUSTED_ORIGINS` is a comma-separated allowlist of exact origins;
 wildcards and URL paths are rejected at startup.
 
+Passkeys default to the hostname and exact origin in `BETTER_AUTH_URL`. Set
+`PASSKEY_RP_ID` only when multiple trusted subdomains should share a relying
+party ID, and list their exact origins in `PASSKEY_ORIGINS`. Every passkey
+origin must also appear in `BETTER_AUTH_TRUSTED_ORIGINS` and must equal or be a
+subdomain of the relying-party ID. WebAuthn works on HTTPS origins and on the
+special localhost development origin; a raw HTTP LAN or tailnet IP is not a
+secure browser context and cannot use passkeys.
+
 Generate `BETTER_AUTH_SECRET` with at least 32 high-entropy characters. It is a
 server session secret, not a user password or vault master password. Set
 `DATABASE_URL` to the `postgres` Compose service using the same database, user,

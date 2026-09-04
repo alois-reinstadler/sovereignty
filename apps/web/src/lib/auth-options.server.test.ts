@@ -14,6 +14,8 @@ describe("Better Auth configuration", () => {
 					betterAuthUrl: "https://vault.example.test",
 					databaseUrl: "postgresql://unused/unused",
 					nodeEnv: "production",
+					passkeyOrigins: ["https://vault.example.test"],
+					passkeyRpId: "example.test",
 					trustedOrigins: ["https://vault.example.test"],
 				},
 				pool,
@@ -27,6 +29,7 @@ describe("Better Auth configuration", () => {
 			expect(options.trustedOrigins).toEqual(["https://vault.example.test"]);
 			expect(options.advanced).not.toHaveProperty("disableCSRFCheck");
 			expect(options.advanced).not.toHaveProperty("disableOriginCheck");
+			expect(options.plugins?.[0]?.id).toBe("passkey");
 			expect(options.plugins?.at(-1)?.id).toBe("tanstack-start-cookies");
 		} finally {
 			await pool.end();
