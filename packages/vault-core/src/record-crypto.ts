@@ -145,7 +145,8 @@ const hasExactKeys = (
 const isValidTimestamp = (value: unknown): value is string =>
 	typeof value === "string" &&
 	value.length <= 64 &&
-	Number.isFinite(Date.parse(value));
+	Number.isFinite(Date.parse(value)) &&
+	new Date(value).toISOString() === value;
 
 const assertVaultItem = (value: unknown, recordId: string): VaultItem => {
 	if (
@@ -180,7 +181,17 @@ const assertVaultItem = (value: unknown, recordId: string): VaultItem => {
 			message: "The decrypted login record is invalid",
 		});
 	}
-	return value as unknown as VaultItem;
+	return {
+		id: value.id as string,
+		title: value.title as string,
+		username: value.username as string,
+		password: value.password as string,
+		website: value.website as string,
+		notes: value.notes as string,
+		favorite: value.favorite as boolean,
+		createdAt: value.createdAt as string,
+		updatedAt: value.updatedAt as string,
+	};
 };
 
 const assertPlaintext = (
@@ -507,6 +518,17 @@ export const convertVaultV1ToV2 = (
 	options: V1ToV2ConversionOptions = {},
 ): Effect.Effect<ConvertedVaultV2, RecordCryptoError> =>
 	Effect.gen(function* () {
+		const itemIds = new Set<string>();
+		for (const item of session.document.items) {
+			if (itemIds.has(item.id)) {
+				return yield* Effect.fail(
+					new VaultFormatError({
+						message: "The v1 vault contains duplicate item identifiers",
+					}),
+				);
+			}
+			itemIds.add(item.id);
+		}
 		const keyEnvelope = yield* createVaultKeyEnvelopeV2(
 			session.vaultKey,
 			masterPassword,

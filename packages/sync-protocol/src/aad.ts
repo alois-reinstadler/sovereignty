@@ -11,6 +11,21 @@ import { parseDecimalBigInt } from "./validation";
 
 const encoder = new TextEncoder();
 
+const assertWellFormedUtf16 = (value: string): void => {
+	for (let index = 0; index < value.length; index += 1) {
+		const unit = value.charCodeAt(index);
+		if (unit >= 0xd800 && unit <= 0xdbff) {
+			const next = value.charCodeAt(index + 1);
+			if (!(next >= 0xdc00 && next <= 0xdfff)) {
+				throw new RangeError("AAD strings must be well-formed UTF-16");
+			}
+			index += 1;
+		} else if (unit >= 0xdc00 && unit <= 0xdfff) {
+			throw new RangeError("AAD strings must be well-formed UTF-16");
+		}
+	}
+};
+
 const u32be = (value: number): Uint8Array => {
 	if (!Number.isSafeInteger(value) || value < 0 || value > 0xffff_ffff) {
 		throw new RangeError("AAD integer does not fit in u32");
@@ -31,6 +46,7 @@ const u64be = (value: string | number): Uint8Array => {
 };
 
 const utf8 = (value: string): Uint8Array => {
+	assertWellFormedUtf16(value);
 	const bytes = encoder.encode(value);
 	return concat(u32be(bytes.length), bytes);
 };

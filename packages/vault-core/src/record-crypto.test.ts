@@ -7,7 +7,7 @@ import {
 } from "@svrgn/sync-protocol";
 import { Effect } from "effect";
 import sodium from "libsodium-wrappers-sumo";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { VaultItem, VaultSession } from "./model";
 import {
 	convertVaultV1ToV2,
@@ -41,6 +41,12 @@ const fixedBytes =
 	(seed: number) =>
 	(length: number): Uint8Array =>
 		Uint8Array.from({ length }, (_, index) => (seed + index * 17) & 0xff);
+
+const fixedBase64 = (length: number, seed: number): string =>
+	sodium.to_base64(
+		fixedBytes(seed)(length),
+		sodium.base64_variants.URLSAFE_NO_PADDING,
+	);
 
 const sequentialBytes = () => {
 	let call = 0;
@@ -107,6 +113,7 @@ describe("independent encrypted records", () => {
 			{ ...envelope, vaultId: OTHER_VAULT_ID },
 			{ ...envelope, recordId: OTHER_ITEM_ID },
 			{ ...envelope, revision: parseDecimalBigInt("2") },
+			{ ...envelope, nonce: fixedBase64(24, 99) },
 			{
 				...envelope,
 				ciphertext: `${ciphertextReplacement}${envelope.ciphertext.slice(1)}`,
@@ -133,6 +140,24 @@ describe("independent encrypted records", () => {
 			);
 			expect(error).toMatchObject({ _tag: "VaultFormatError" });
 		}
+	});
+
+	it("copies validated item fields before serialization", async () => {
+		const hostileItem = Object.assign(
+			Object.create({ toJSON: () => ({ kind: "replaced" }) }),
+			item,
+		) as VaultItem;
+		const envelope = await Effect.runPromise(
+			encryptLoginRecord(key(), VAULT_ID, hostileItem, decimalBigInt(1n)),
+		);
+
+		expect(
+			await Effect.runPromise(decryptVaultRecord(key(), envelope)),
+		).toEqual({
+			schemaVersion: 1,
+			kind: "login",
+			item,
+		});
 	});
 
 	it("rejects records larger than 256 KiB before encryption", async () => {
@@ -169,6 +194,88 @@ describe("v2 vault-key envelope and v1 conversion", () => {
 		expect(
 			await Effect.runPromise(unwrapVaultKeyV2(first, "master password")),
 		).toEqual(vaultKey);
+	});
+
+	it("authenticates vault-key metadata, nonce, ciphertext, and password", async () => {
+		await sodium.ready;
+		const vaultKey = key();
+		const envelope = await Effect.runPromise(
+			createVaultKeyEnvelopeV2(vaultKey, "master password", VAULT_ID, {
+				createdAt: CREATED_AT,
+				randomBytes: sequentialBytes(),
+				kdf: {
+					operationsLimit: sodium.crypto_pwhash_OPSLIMIT_MIN,
+					memoryLimit: sodium.crypto_pwhash_MEMLIMIT_MIN,
+				},
+			}),
+		);
+		const tampered = [
+			{ ...envelope, vaultId: OTHER_VAULT_ID },
+			{ ...envelope, keyRevision: parseDecimalBigInt("2") },
+			{ ...envelope, createdAt: UPDATED_AT },
+			{
+				...envelope,
+				wrappedVaultKey: {
+					...envelope.wrappedVaultKey,
+					nonce: fixedBase64(24, 99),
+				},
+			},
+			{
+				...envelope,
+				wrappedVaultKey: {
+					...envelope.wrappedVaultKey,
+					ciphertext: fixedBase64(48, 101),
+				},
+			},
+		];
+
+		for (const changed of tampered) {
+			const error = await Effect.runPromise(
+				Effect.flip(unwrapVaultKeyV2(changed, "master password")),
+			);
+			expect(error).toMatchObject({ _tag: "VaultAuthenticationError" });
+		}
+		const wrongPassword = await Effect.runPromise(
+			Effect.flip(unwrapVaultKeyV2(envelope, "wrong password")),
+		);
+		expect(wrongPassword).toMatchObject({ _tag: "VaultAuthenticationError" });
+	});
+
+	it("zeroes transient wrapping keys and plaintext byte buffers", async () => {
+		await sodium.ready;
+		const cleared: Array<Uint8Array> = [];
+		const memzero = sodium.memzero.bind(sodium);
+		const spy = vi.spyOn(sodium, "memzero").mockImplementation((bytes) => {
+			memzero(bytes);
+			cleared.push(bytes);
+		});
+		try {
+			const keyEnvelope = await Effect.runPromise(
+				createVaultKeyEnvelopeV2(key(), "master password", VAULT_ID, {
+					createdAt: CREATED_AT,
+					randomBytes: sequentialBytes(),
+					kdf: {
+						operationsLimit: sodium.crypto_pwhash_OPSLIMIT_MIN,
+						memoryLimit: sodium.crypto_pwhash_MEMLIMIT_MIN,
+					},
+				}),
+			);
+			await Effect.runPromise(
+				Effect.flip(unwrapVaultKeyV2(keyEnvelope, "wrong password")),
+			);
+			const record = await Effect.runPromise(
+				encryptLoginRecord(key(), VAULT_ID, item, decimalBigInt(1n)),
+			);
+			await Effect.runPromise(decryptVaultRecord(key(), record));
+		} finally {
+			spy.mockRestore();
+		}
+
+		expect(cleared.some((bytes) => bytes.length === 32)).toBe(true);
+		expect(cleared.some((bytes) => bytes.length > 32)).toBe(true);
+		expect(cleared.every((bytes) => bytes.every((byte) => byte === 0))).toBe(
+			true,
+		);
 	});
 
 	it("converts v1 logins without changing identity or mutating the session", async () => {
@@ -221,5 +328,25 @@ describe("v2 vault-key envelope and v1 conversion", () => {
 			),
 		).toEqual(session.vaultKey);
 		expect(JSON.stringify(session.document)).toBe(before);
+	});
+
+	it("rejects duplicate v1 item identifiers instead of emitting conflicts", async () => {
+		const session: VaultSession = {
+			vaultKey: key(),
+			document: {
+				version: 1,
+				id: VAULT_ID,
+				items: [item, { ...item, title: "Duplicate" }],
+				createdAt: CREATED_AT,
+				updatedAt: UPDATED_AT,
+			},
+		};
+		const error = await Effect.runPromise(
+			Effect.flip(convertVaultV1ToV2(session, "master password")),
+		);
+		expect(error).toMatchObject({
+			_tag: "VaultFormatError",
+			message: expect.stringContaining("duplicate"),
+		});
 	});
 });

@@ -12,6 +12,7 @@ import {
 	parseEncryptedRecordEnvelopeV2,
 	parseSyncChangesResponse,
 	parseSyncMutationRequest,
+	parseVaultKeyEnvelopeV2,
 	SYNC_PROTOCOL_VERSION,
 } from "./index";
 
@@ -59,6 +60,7 @@ describe("decimal bigint wire values", () => {
 		"1.0",
 		" 1",
 		"9223372036854775808",
+		"9".repeat(100_000),
 	])("rejects non-canonical or out-of-range value %j", (value) => {
 		expect(() => parseDecimalBigInt(value)).toThrow(ProtocolValidationError);
 	});
@@ -79,6 +81,18 @@ describe("record AAD", () => {
 		).toBe(
 			"00000012737672676e2d7661756c742d7265636f7264000000020000002430313866336433652d386262372d376363382d386530322d336538636164386435623734000000097265636f72642dcf80000000000000002a",
 		);
+	});
+
+	it("rejects ill-formed UTF-16 instead of allowing AAD collisions", () => {
+		expect(() =>
+			encodeRecordAad({
+				format: ENCRYPTED_RECORD_FORMAT_V2,
+				version: SYNC_PROTOCOL_VERSION,
+				vaultId: "vault-\ud800",
+				recordId: "record",
+				revision: parseDecimalBigInt("1"),
+			}),
+		).toThrow(/well-formed UTF-16/);
 	});
 
 	it("has a fixed cross-platform vault-key vector", () => {
@@ -147,5 +161,34 @@ describe("sync protocol validation", () => {
 				ciphertext: base64(MAX_RECORD_CIPHERTEXT_BYTES + 1),
 			}),
 		).toThrow(/maximum size/);
+	});
+
+	it("rejects ill-formed identifiers and non-canonical timestamps", () => {
+		expect(() =>
+			parseEncryptedRecordEnvelopeV2({
+				...record(),
+				recordId: "record-\ud800",
+			}),
+		).toThrow(/128 UTF-8 bytes/);
+		expect(() =>
+			parseVaultKeyEnvelopeV2({
+				format: "svrgn-vault-key",
+				version: SYNC_PROTOCOL_VERSION,
+				vaultId: VAULT_ID,
+				keyRevision: "1",
+				kdf: {
+					algorithm: "argon2id13",
+					salt: base64(16),
+					operationsLimit: 2,
+					memoryLimit: 67_108_864,
+				},
+				wrappedVaultKey: {
+					algorithm: "xchacha20-poly1305-ietf",
+					nonce: base64(24),
+					ciphertext: base64(48),
+				},
+				createdAt: "2026-09-03T14:00:00+02:00",
+			}),
+		).toThrow(/canonical ISO 8601/);
 	});
 });

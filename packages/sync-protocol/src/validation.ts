@@ -19,6 +19,7 @@ const UUID =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BASE64_URL = /^[A-Za-z0-9_-]+$/;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
+const MAX_WIRE_BIGINT_DIGITS = MAX_WIRE_BIGINT.toString(10).length;
 const MAX_IDENTIFIER_BYTES = 128;
 const MAX_TIMESTAMP_BYTES = 64;
 const MAX_KDF_OPERATIONS_LIMIT = 10;
@@ -61,6 +62,20 @@ const assertObject = (
 const utf8Length = (value: string): number =>
 	new TextEncoder().encode(value).length;
 
+const isWellFormedUtf16 = (value: string): boolean => {
+	for (let index = 0; index < value.length; index += 1) {
+		const unit = value.charCodeAt(index);
+		if (unit >= 0xd800 && unit <= 0xdbff) {
+			const next = value.charCodeAt(index + 1);
+			if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+			index += 1;
+		} else if (unit >= 0xdc00 && unit <= 0xdfff) {
+			return false;
+		}
+	}
+	return true;
+};
+
 const assertUuid = (value: unknown, label: string): string => {
 	if (typeof value !== "string" || !UUID.test(value)) {
 		fail(`${label} must be a canonical lowercase UUID`);
@@ -72,6 +87,7 @@ const assertIdentifier = (value: unknown, label: string): string => {
 	if (
 		typeof value !== "string" ||
 		value.length === 0 ||
+		!isWellFormedUtf16(value) ||
 		utf8Length(value) > MAX_IDENTIFIER_BYTES
 	) {
 		fail(`${label} must be a non-empty string of at most 128 UTF-8 bytes`);
@@ -83,9 +99,10 @@ const assertTimestamp = (value: unknown, label: string): string => {
 	if (
 		typeof value !== "string" ||
 		utf8Length(value) > MAX_TIMESTAMP_BYTES ||
-		!Number.isFinite(Date.parse(value))
+		!Number.isFinite(Date.parse(value)) ||
+		new Date(value).toISOString() !== value
 	) {
-		fail(`${label} must be a valid timestamp`);
+		fail(`${label} must be a canonical ISO 8601 UTC timestamp`);
 	}
 	return value as string;
 };
@@ -95,7 +112,11 @@ export const parseDecimalBigInt = (
 	options: { readonly allowZero?: boolean; readonly label?: string } = {},
 ): DecimalBigInt => {
 	const label = options.label ?? "value";
-	if (typeof value !== "string" || !DECIMAL.test(value)) {
+	if (
+		typeof value !== "string" ||
+		value.length > MAX_WIRE_BIGINT_DIGITS ||
+		!DECIMAL.test(value)
+	) {
 		fail(`${label} must be a canonical unsigned decimal string`);
 	}
 	const parsed = BigInt(value as string);
