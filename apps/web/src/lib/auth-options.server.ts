@@ -5,6 +5,12 @@ import type { Pool } from "pg";
 
 import type { ServerEnvironment } from "./server-env";
 
+export const assertPasskeyUserVerified = (userVerified: boolean): void => {
+	if (!userVerified) {
+		throw new Error("Passkey user verification is required");
+	}
+};
+
 /**
  * Better Auth owns account authentication only. The account password handled
  * here is distinct from the vault master password, which never leaves a client.
@@ -46,6 +52,19 @@ export const buildAuthOptions = (
 			rpID: environment.passkeyRpId,
 			rpName: "Sovereignty",
 			origin: [...environment.passkeyOrigins],
+			authenticatorSelection: { userVerification: "required" },
+			registration: {
+				afterVerification: ({ verification }) =>
+					assertPasskeyUserVerified(
+						verification.registrationInfo?.userVerified === true,
+					),
+			},
+			authentication: {
+				afterVerification: ({ verification }) =>
+					assertPasskeyUserVerified(
+						verification.authenticationInfo.userVerified,
+					),
+			},
 		}),
 		tanstackStartCookies(),
 	],

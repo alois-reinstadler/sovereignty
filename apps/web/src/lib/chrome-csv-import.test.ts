@@ -136,6 +136,22 @@ describe("Chrome CSV preview and import", () => {
 		expect(JSON.stringify(preview.invalidRows)).not.toContain("also-secret");
 	});
 
+	it("rejects URLs containing embedded credentials without previewing them", () => {
+		const preview = prepareChromeCsvImport(
+			"url,username,password\nhttps://alice:basic-secret@example.com,alice,vault-secret",
+			[],
+		);
+
+		expect(preview.rows).toEqual([]);
+		expect(preview.invalidRows).toEqual([
+			expect.objectContaining({
+				reason: "URL must not contain embedded credentials.",
+			}),
+		]);
+		expect(JSON.stringify(preview.invalidRows)).not.toContain("basic-secret");
+		expect(JSON.stringify(preview.invalidRows)).not.toContain("vault-secret");
+	});
+
 	it("marks duplicates against the vault and earlier file rows", () => {
 		const preview = prepareChromeCsvImport(
 			[

@@ -166,9 +166,23 @@ const validateWebsite = (website: string): string | null => {
 		) {
 			return "URL must be a valid HTTP or HTTPS address.";
 		}
+		if (parsed.username || parsed.password) {
+			return "URL must not contain embedded credentials.";
+		}
 		return null;
 	} catch {
 		return "URL must be a valid HTTP or HTTPS address.";
+	}
+};
+
+const safePreviewWebsite = (website: string): string => {
+	try {
+		const parsed = new URL(website);
+		parsed.username = "";
+		parsed.password = "";
+		return parsed.href;
+	} catch {
+		return website;
 	}
 };
 
@@ -255,7 +269,12 @@ export function prepareChromeCsvImport(
 		const reason =
 			columnError ?? websiteError ?? (!password ? "Password is empty." : null);
 		if (reason) {
-			invalidRows.push({ rowNumber: row.line, title, website, reason });
+			invalidRows.push({
+				rowNumber: row.line,
+				title,
+				website: safePreviewWebsite(website),
+				reason,
+			});
 			continue;
 		}
 

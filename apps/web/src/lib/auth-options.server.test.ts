@@ -1,7 +1,10 @@
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
-import { buildAuthOptions } from "./auth-options.server";
+import {
+	assertPasskeyUserVerified,
+	buildAuthOptions,
+} from "./auth-options.server";
 
 describe("Better Auth configuration", () => {
 	it("keeps origin checks enabled and persists rate limits", async () => {
@@ -34,5 +37,12 @@ describe("Better Auth configuration", () => {
 		} finally {
 			await pool.end();
 		}
+	});
+
+	it("rejects passkey ceremonies without user verification", () => {
+		expect(() => assertPasskeyUserVerified(false)).toThrow(
+			"Passkey user verification is required",
+		);
+		expect(() => assertPasskeyUserVerified(true)).not.toThrow();
 	});
 });
