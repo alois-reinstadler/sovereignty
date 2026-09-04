@@ -251,6 +251,22 @@ export interface SyncConflictSummary {
 	localLabel: string;
 }
 
+const latestConflictPerRecord = (
+	conflicts: SyncMetadata["conflicts"],
+): ReadonlyArray<SyncMetadata["conflicts"][number]> => {
+	const latest = new Map<string, SyncMetadata["conflicts"][number]>();
+	for (const conflict of conflicts) {
+		const current = latest.get(conflict.record.recordId);
+		if (
+			!current ||
+			BigInt(conflict.record.revision) > BigInt(current.record.revision)
+		) {
+			latest.set(conflict.record.recordId, conflict);
+		}
+	}
+	return [...latest.values()];
+};
+
 export const inspectSyncConflicts = async (input: {
 	ownerUserId: string;
 	vault: UnlockedVault;
@@ -263,7 +279,7 @@ export const inspectSyncConflicts = async (input: {
 		input.store,
 	);
 	const summaries: SyncConflictSummary[] = [];
-	for (const conflict of metadata.conflicts) {
+	for (const conflict of latestConflictPerRecord(metadata.conflicts)) {
 		if (conflict.record.vaultId !== metadata.vaultId) {
 			throw new SyncClientError(
 				"Stored conflict metadata belongs to a different vault.",
@@ -305,15 +321,20 @@ export const resolveSyncConflict = async (input: {
 		input.document,
 		input.store,
 	);
-	const selected = metadata.conflicts.find(
-		({ record }) =>
-			record.recordId === input.recordId &&
-			record.revision === input.remoteRevision,
+	const recordConflicts = metadata.conflicts.filter(
+		({ record }) => record.recordId === input.recordId,
 	);
+	const selected = latestConflictPerRecord(recordConflicts)[0];
 	if (!selected) {
 		throw new SyncClientError(
 			"This sync conflict no longer exists.",
 			"conflict_not_found",
+		);
+	}
+	if (selected.record.revision !== input.remoteRevision) {
+		throw new SyncClientError(
+			"A newer remote revision exists for this conflict. Refresh and resolve the latest version.",
+			"stale_conflict",
 		);
 	}
 	if (selected.record.vaultId !== metadata.vaultId) {
@@ -327,11 +348,7 @@ export const resolveSyncConflict = async (input: {
 	const remote = await input.vault.decryptSyncRecord(selected.record);
 	const nextMetadata = structuredClone(metadata);
 	nextMetadata.conflicts = nextMetadata.conflicts.filter(
-		({ record }) =>
-			!(
-				record.recordId === input.recordId &&
-				record.revision === input.remoteRevision
-			),
+		({ record }) => record.recordId !== input.recordId,
 	);
 	nextMetadata.outbox = nextMetadata.outbox.filter(
 		({ mutation }) => mutation.record.recordId !== input.recordId,

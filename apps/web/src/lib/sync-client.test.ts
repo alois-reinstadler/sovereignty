@@ -446,6 +446,75 @@ describe("encrypted sync client", () => {
 		);
 	});
 
+	it("shows only the highest remote revision and rejects stale resolution", async () => {
+		const local = { ...item(), title: "Local login" };
+		const memory = memoryStore({
+			version: 1,
+			vaultId: VAULT_ID,
+			cursor: "10",
+			records: {
+				"record-one": {
+					revision: "8",
+					localUpdatedAt: local.updatedAt,
+					tombstoned: false,
+				},
+			},
+			outbox: [],
+			conflicts: [
+				{ record: record("10", 12), detectedAt: "2026-01-06T00:00:00.000Z" },
+				{ record: record("9", 11), detectedAt: "2026-01-05T00:00:00.000Z" },
+			],
+		});
+		const vault = fakeVault(document([local]));
+		vi.mocked(vault.decryptSyncRecord).mockImplementation(async (envelope) => ({
+			schemaVersion: 1,
+			kind: "login",
+			item: {
+				...item("2026-01-06T00:00:00.000Z"),
+				title: `Remote revision ${envelope.revision}`,
+			},
+		}));
+		const summaries = await inspectSyncConflicts({
+			ownerUserId: USER_ID,
+			vault,
+			document: document([local]),
+			store: memory.store,
+		});
+		expect(summaries).toHaveLength(1);
+		expect(summaries[0]).toMatchObject({
+			remoteRevision: "10",
+			remoteLabel: "Remote revision 10",
+		});
+
+		await expect(
+			resolveSyncConflict({
+				ownerUserId: USER_ID,
+				vault,
+				document: document([local]),
+				recordId: "record-one",
+				remoteRevision: "9",
+				resolution: "keep-local",
+				store: memory.store,
+			}),
+		).rejects.toMatchObject({ code: "stale_conflict" });
+		expect(memory.current()?.conflicts).toHaveLength(2);
+
+		await resolveSyncConflict({
+			ownerUserId: USER_ID,
+			vault,
+			document: document([local]),
+			recordId: "record-one",
+			remoteRevision: "10",
+			resolution: "keep-local",
+			store: memory.store,
+		});
+		expect(memory.current()?.conflicts).toHaveLength(0);
+		expect(memory.current()?.outbox[0]?.mutation).toMatchObject({
+			baseRevision: "10",
+			record: { revision: "11" },
+		});
+	});
+
 	it("rolls the local vault back when remote resolution metadata cannot commit", async () => {
 		const localDocument = document([
 			{ ...item(), title: "Preserved local login" },
