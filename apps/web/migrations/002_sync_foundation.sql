@@ -5,8 +5,8 @@ create table if not exists "sync_vault" (
 	"id" text primary key check (octet_length("id") between 1 and 128),
 	"owner_user_id" uuid not null unique
 		references "user" ("id") on delete cascade,
-	"protocol_version" integer not null default 1
-		check ("protocol_version" = 1),
+	"protocol_version" integer not null default 2
+		check ("protocol_version" = 2),
 	"key_revision" bigint not null default 1 check ("key_revision" > 0),
 	"key_envelope" jsonb not null
 		check (jsonb_typeof("key_envelope") = 'object'),

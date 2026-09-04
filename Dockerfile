@@ -10,6 +10,7 @@ FROM base AS dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/desktop/package.json apps/desktop/package.json
+COPY packages/sync-protocol/package.json packages/sync-protocol/package.json
 COPY packages/vault-core/package.json packages/vault-core/package.json
 RUN pnpm install --frozen-lockfile
 
@@ -21,6 +22,7 @@ FROM base AS production-dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/desktop/package.json apps/desktop/package.json
+COPY packages/sync-protocol/package.json packages/sync-protocol/package.json
 COPY packages/vault-core/package.json packages/vault-core/package.json
 RUN pnpm install --prod --frozen-lockfile
 
