@@ -1,5 +1,6 @@
 import { Button, Card, Icon, Spinner, TextInput } from "@astryxdesign/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { applyChromeCsvImport } from "#/lib/chrome-csv-import";
 import type {
 	UnlockedVault,
 	VaultDocument,
@@ -19,6 +20,7 @@ import {
 import { AuthScreen } from "./auth-screen";
 import { BackupControls } from "./backup-controls";
 import { Brand } from "./brand";
+import { ChromeCsvImport } from "./chrome-csv-import";
 import { ItemDetail } from "./item-detail";
 import { ItemForm } from "./item-form";
 
@@ -398,6 +400,15 @@ export function VaultApp() {
 					hasExistingVault
 					isDisabled={isLocking || isPersisting}
 					onImported={finishBackupImport}
+				/>
+				<ChromeCsvImport
+					existingItems={document.items}
+					isDisabled={isLocking || isPersisting}
+					onImport={(preview, strategy) =>
+						persist((current) =>
+							applyChromeCsvImport(current, preview, strategy),
+						)
+					}
 				/>
 				<Button
 					label="Lock vault"

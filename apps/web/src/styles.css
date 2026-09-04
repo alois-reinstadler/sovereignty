@@ -33,6 +33,31 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 .vault-nav .backup-controls { padding: 8px 0; border-top: 1px solid #1d2425; }
 .vault-nav .backup-actions { flex-direction: column; }
 .vault-nav .backup-actions > button { width: 100%; }
+.chrome-import-controls { display: flex; width: 100%; flex-direction: column; gap: 10px; }
+.vault-nav .chrome-import-controls { margin-bottom: 8px; }
+.csv-import-modal { width: min(760px,100%); max-height: calc(100vh - 48px); overflow-y: auto; border-color: #303a38 !important; background: #131819 !important; }
+.csv-import-heading h2 { margin: 6px 0 8px; color: #f2f5f3; font-size: 25px; font-weight: 620; letter-spacing: -.035em; }
+.csv-import-heading p { margin: 0; color: #99a3a0; font-size: 13px; line-height: 1.6; }
+.csv-import-stats { display: grid; grid-template-columns: repeat(4,1fr); margin: 22px 0; overflow: hidden; border: 1px solid #27302f; border-radius: 8px; }
+.csv-import-stats > div { display: flex; min-width: 0; flex-direction: column; gap: 3px; padding: 12px 14px; border-right: 1px solid #27302f; }
+.csv-import-stats > div:last-child { border-right: 0; }
+.csv-import-stats dd { margin: 0; color: #edf3f0; font-size: 18px; font-weight: 650; }
+.csv-import-stats dt { color: #68736f; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.csv-preview-section { margin: 18px 0; }
+.csv-preview-section h3 { margin: 0 0 8px; color: #9aa6a2; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.csv-preview-list { overflow: hidden; border: 1px solid #27302f; border-radius: 8px; }
+.csv-preview-section.invalid .csv-preview-list { border-color: #4a3033; }
+.csv-preview-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 12px; border-bottom: 1px solid #252d2c; }
+.csv-preview-row:last-child { border-bottom: 0; }
+.csv-preview-row > div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.csv-preview-row strong, .csv-preview-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csv-preview-row strong { color: #dce5e1; font-size: 11px; font-weight: 600; }
+.csv-preview-row span { color: #68736f; font-size: 9px; }
+.duplicate-pill, .valid-pill { flex: none; padding: 4px 6px; border: 1px solid #594d2b; border-radius: 5px; color: #cfb965 !important; background: #241f13; font-size: 8px !important; text-transform: uppercase; }
+.valid-pill { border-color: #275143; color: #72c7a4 !important; background: #13251f; }
+.csv-more-rows { margin: 0; padding: 9px 12px; color: #69736f; font-size: 10px; }
+.csv-duplicate-strategy { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 18px 0; color: #aeb8b5; font-size: 11px; }
+.csv-duplicate-strategy select { min-width: 190px; padding: 7px 9px; border: 1px solid #303a38; border-radius: 6px; color: #d8dfdd; background: #101516; }
 .vault-shell { display: grid; min-height: 100vh; grid-template-columns: 216px minmax(270px,340px) minmax(460px,1fr); background: #0b0e10; }
 .vault-nav, .items-pane { border-right: 1px solid #22282a; }
 .vault-nav { display: flex; min-height: 100vh; flex-direction: column; padding: 25px 17px 20px; background: #0d1113; }
@@ -141,7 +166,12 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 	.search-wrap kbd { display: none; }
 	.detail-actions > button:first-child { display: none; }
 	.modal-backdrop { align-items: end; padding: 0; }
-	.editor-modal, .confirm-modal { width: 100%; max-height: 92vh; border-radius: 14px 14px 0 0 !important; }
+	.editor-modal, .confirm-modal, .csv-import-modal { width: 100%; max-height: 92vh; border-radius: 14px 14px 0 0 !important; }
+	.csv-import-stats { grid-template-columns: 1fr 1fr; }
+	.csv-import-stats > div:nth-child(2) { border-right: 0; }
+	.csv-import-stats > div:nth-child(-n+2) { border-bottom: 1px solid #27302f; }
+	.csv-preview-row { align-items: flex-start; flex-direction: column; gap: 7px; }
+	.csv-duplicate-strategy { align-items: stretch; flex-direction: column; gap: 7px; }
 }
 @media (prefers-reduced-motion: no-preference) {
 	.auth-card, .editor-modal, .confirm-modal { animation: enter 220ms ease-out; }

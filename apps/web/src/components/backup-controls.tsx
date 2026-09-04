@@ -139,6 +139,8 @@ export function BackupControls({
 			</div>
 			<input
 				ref={inputRef}
+				id="encrypted-vault-backup"
+				name="encrypted-vault-backup"
 				type="file"
 				accept=".svrgn,application/json"
 				className="visually-hidden-field"
