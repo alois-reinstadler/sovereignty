@@ -9,6 +9,9 @@
     "dev": "vite dev --port 3000",
     "generate-routes": "tsr generate",
     "build": "vite build",
+    "start": "node scripts/start.mjs",
+    "db:migrate": "node scripts/migrate.mjs",
+    "auth:schema": "auth generate --config src/lib/auth-schema.server.ts --output migrations/001_better_auth.sql --yes",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -24,17 +27,22 @@
     "@svrgn/vault-core": "workspace:*",
     "@tanstack/react-router": "1.170.32",
     "@tanstack/react-start": "1.168.49",
+    "better-auth": "1.7.2",
     "effect": "3.22.1",
+    "pg": "8.23.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "srvx": "1.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
     "@tanstack/router-cli": "1.167.33",
     "@types/node": "22.20.1",
+    "@types/pg": "8.23.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
     "@vitejs/plugin-react": "6.1.1",
+    "auth": "1.7.2",
     "typescript": "6.0.3",
     "vite": "8.2.2",
     "vitest": "4.1.11"

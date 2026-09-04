@@ -15,9 +15,13 @@ and a Tauri desktop shell.
 - Manual and inactivity-based locking
 - TanStack Start web application using Astryx
 - Tauri 2 desktop packaging scaffold
+- Better Auth account/session foundation with PostgreSQL migrations
+- Docker Compose foundation for a self-hosted web deployment
 
-Cloud sync, recovery, sharing, browser autofill, imports, and mobile apps are not
-part of this milestone. See [ROADMAP.md](./ROADMAP.md).
+Encrypted sync routes, recovery, sharing, browser autofill, imports, and mobile
+apps are not part of this milestone. See [ROADMAP.md](./ROADMAP.md). The current
+deployment boundary and operator instructions are in
+[docs/SELF_HOSTING.md](./docs/SELF_HOSTING.md).
 
 ## Development
 

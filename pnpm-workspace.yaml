@@ -4,3 +4,6 @@ packages:
 
 allowBuilds:
   '@astryxdesign/core': true
+
+minimumReleaseAgeExclude:
+  - srvx@1.0.0
