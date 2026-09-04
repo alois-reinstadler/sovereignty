@@ -27,6 +27,12 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 .local-note { display: flex; margin: 0; align-items: flex-start; gap: 8px; color: #727c79; font-size: 11px; line-height: 1.55; }
 .local-note svg { flex: none; margin-top: 1px; }
 .preview-label { margin: -10px 0 0; color: #4f5856; font-size: 8px; font-weight: 700; letter-spacing: .12em; }
+.backup-controls { display: flex; width: 100%; flex-direction: column; gap: 10px; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.auth-column > .backup-controls .backup-actions { justify-content: center; }
+.vault-nav .backup-controls { padding: 8px 0; border-top: 1px solid #1d2425; }
+.vault-nav .backup-actions { flex-direction: column; }
+.vault-nav .backup-actions > button { width: 100%; }
 .vault-shell { display: grid; min-height: 100vh; grid-template-columns: 216px minmax(270px,340px) minmax(460px,1fr); background: #0b0e10; }
 .vault-nav, .items-pane { border-right: 1px solid #22282a; }
 .vault-nav { display: flex; min-height: 100vh; flex-direction: column; padding: 25px 17px 20px; background: #0d1113; }

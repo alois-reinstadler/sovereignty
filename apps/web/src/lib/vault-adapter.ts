@@ -18,8 +18,15 @@ import { Effect } from "effect";
 import type { UnlockedVault, VaultDocument, VaultItem } from "./models";
 
 export const VAULT_STORAGE_KEY = "svrgn.vault.envelope.v1";
+export const VAULT_BACKUP_EXTENSION = ".svrgn";
+export const VAULT_BACKUP_MAX_BYTES = 10 * 1024 * 1024;
 
 export type LocalVaultStorage = Pick<Storage, "getItem" | "setItem">;
+
+export interface EncryptedVaultBackup {
+	filename: string;
+	serialized: string;
+}
 
 export class LocalVaultStorageError extends Error {
 	readonly operation: "read" | "write" | "parse";
@@ -47,9 +54,9 @@ const browserStorage = (): LocalVaultStorage => {
 	}
 };
 
-const readStoredEnvelope = (
+const readStoredSerialized = (
 	storage: LocalVaultStorage = browserStorage(),
-): EncryptedVaultEnvelope | null => {
+): string | null => {
 	let serialized: string | null;
 	try {
 		serialized = storage.getItem(VAULT_STORAGE_KEY);
@@ -61,6 +68,13 @@ const readStoredEnvelope = (
 		);
 	}
 
+	return serialized;
+};
+
+const readStoredEnvelope = (
+	storage: LocalVaultStorage = browserStorage(),
+): EncryptedVaultEnvelope | null => {
+	const serialized = readStoredSerialized(storage);
 	if (!serialized) return null;
 	try {
 		return parseEncryptedVault(serialized);
@@ -72,6 +86,82 @@ const readStoredEnvelope = (
 		);
 	}
 };
+
+const backupByteLength = (serialized: string): number =>
+	new TextEncoder().encode(serialized).byteLength;
+
+export function parseEncryptedVaultBackup(
+	serialized: string,
+): EncryptedVaultEnvelope {
+	if (!serialized.trim()) {
+		throw new LocalVaultStorageError("parse", "The selected backup is empty.");
+	}
+	if (backupByteLength(serialized) > VAULT_BACKUP_MAX_BYTES) {
+		throw new LocalVaultStorageError(
+			"parse",
+			"The selected backup is larger than 10 MB and was not imported.",
+		);
+	}
+	try {
+		return parseEncryptedVault(serialized);
+	} catch (cause) {
+		throw new LocalVaultStorageError(
+			"parse",
+			"The selected file is not a supported Svrgn encrypted vault backup.",
+			cause,
+		);
+	}
+}
+
+const safeBackupFilename = (envelope: EncryptedVaultEnvelope): string => {
+	const vaultId = envelope.id
+		.toLocaleLowerCase("en")
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 24);
+	const timestamp = envelope.updatedAt
+		.replace(/\.\d{3}Z$/, "Z")
+		.replace(/[^0-9TZ]/g, "-");
+	return `svrgn-vault-${vaultId || "local"}-${timestamp}${VAULT_BACKUP_EXTENSION}`;
+};
+
+/** Returns the exact persisted encrypted envelope. No vault session is read. */
+export function exportLocalVaultBackup(
+	storage: LocalVaultStorage = browserStorage(),
+): EncryptedVaultBackup {
+	const serialized = readStoredSerialized(storage);
+	if (!serialized) {
+		throw new LocalVaultStorageError(
+			"read",
+			"No encrypted local vault is available to export.",
+		);
+	}
+	const envelope = parseEncryptedVaultBackup(serialized);
+	return { filename: safeBackupFilename(envelope), serialized };
+}
+
+export interface ImportLocalVaultBackupOptions {
+	overwriteExisting?: boolean;
+	storage?: LocalVaultStorage;
+}
+
+/** Validates the complete backup before checking overwrite consent or writing. */
+export function importLocalVaultBackup(
+	serialized: string,
+	options: ImportLocalVaultBackupOptions = {},
+): EncryptedVaultEnvelope {
+	const envelope = parseEncryptedVaultBackup(serialized);
+	const storage = options.storage ?? browserStorage();
+	const existing = readStoredSerialized(storage);
+	if (existing !== null && !options.overwriteExisting) {
+		throw new LocalVaultStorageError(
+			"write",
+			"Import cancelled. The existing encrypted vault was not changed.",
+		);
+	}
+	storeEnvelope(envelope, storage);
+	return envelope;
+}
 
 export function hasStoredVault(storage?: LocalVaultStorage): boolean {
 	return readStoredEnvelope(storage) !== null;

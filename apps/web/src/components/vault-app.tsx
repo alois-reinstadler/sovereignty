@@ -17,6 +17,7 @@ import {
 } from "#/lib/vault-adapter";
 
 import { AuthScreen } from "./auth-screen";
+import { BackupControls } from "./backup-controls";
 import { Brand } from "./brand";
 import { ItemDetail } from "./item-detail";
 import { ItemForm } from "./item-form";
@@ -44,6 +45,7 @@ export function VaultApp() {
 	const [isPersisting, setIsPersisting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
+	const [backupNotice, setBackupNotice] = useState<string | null>(null);
 	const [autoLockMinutes, setAutoLockMinutes] = useState(5);
 	const [mobileDetail, setMobileDetail] = useState(false);
 	const lastActivity = useRef(Date.now());
@@ -176,6 +178,7 @@ export function VaultApp() {
 	const authenticate = async (password: string, create: boolean) => {
 		setIsWorking(true);
 		setError(null);
+		setBackupNotice(null);
 		try {
 			const unlocked = create
 				? await createLocalVault(password)
@@ -194,6 +197,21 @@ export function VaultApp() {
 		} finally {
 			setIsWorking(false);
 		}
+	};
+
+	const finishBackupImport = async () => {
+		const unlocked = sessionRef.current;
+		if (unlocked) await unlocked.close();
+		sessionRef.current = null;
+		documentRef.current = null;
+		setDocument(null);
+		setSelectedId(null);
+		setEditing(null);
+		setDeleting(null);
+		setStatus("locked");
+		setBackupNotice(
+			"The imported vault is encrypted and locked. Enter its master password to continue.",
+		);
 	};
 
 	const persist = async (update: DocumentUpdate): Promise<boolean> => {
@@ -320,6 +338,8 @@ export function VaultApp() {
 				error={error}
 				onCreate={(password) => authenticate(password, true)}
 				onUnlock={(password) => authenticate(password, false)}
+				onImported={finishBackupImport}
+				backupNotice={backupNotice}
 			/>
 		);
 	}
@@ -374,6 +394,11 @@ export function VaultApp() {
 						))}
 					</select>
 				</label>
+				<BackupControls
+					hasExistingVault
+					isDisabled={isLocking || isPersisting}
+					onImported={finishBackupImport}
+				/>
 				<Button
 					label="Lock vault"
 					variant="ghost"

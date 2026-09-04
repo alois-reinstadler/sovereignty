@@ -8,6 +8,7 @@ import {
 } from "@astryxdesign/core";
 import { type FormEvent, useState } from "react";
 
+import { BackupControls } from "./backup-controls";
 import { Brand } from "./brand";
 
 type AuthScreenProps = {
@@ -16,6 +17,8 @@ type AuthScreenProps = {
 	error: string | null;
 	onCreate: (password: string) => Promise<void>;
 	onUnlock: (password: string) => Promise<void>;
+	onImported: () => Promise<void> | void;
+	backupNotice?: string | null;
 };
 
 export function AuthScreen({
@@ -24,6 +27,8 @@ export function AuthScreen({
 	error,
 	onCreate,
 	onUnlock,
+	onImported,
+	backupNotice,
 }: AuthScreenProps) {
 	const [password, setPassword] = useState("");
 	const [confirmation, setConfirmation] = useState("");
@@ -153,6 +158,18 @@ export function AuthScreen({
 						</Stack>
 					</form>
 				</Card>
+				{backupNotice ? (
+					<Banner
+						status="success"
+						title="Backup imported"
+						description={backupNotice}
+					/>
+				) : null}
+				<BackupControls
+					hasExistingVault={mode === "locked"}
+					isDisabled={isWorking}
+					onImported={onImported}
+				/>
 				<p className="preview-label">
 					DEVELOPMENT PREVIEW · NOT AUDITED FOR PRODUCTION USE
 				</p>

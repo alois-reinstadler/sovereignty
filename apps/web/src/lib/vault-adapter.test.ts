@@ -4,14 +4,22 @@ import type {
 	VaultDocument,
 	VaultSession,
 } from "@svrgn/vault-core";
+import { createVault } from "@svrgn/vault-core";
+import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+	exportLocalVaultBackup,
 	hasStoredVault,
+	importLocalVaultBackup,
 	type LocalVaultStorage,
 	LocalVaultStorageError,
 	makeUnlockedVault,
 	persistCreatedVault,
+	saveLocalVault,
+	unlockLocalVault,
+	VAULT_BACKUP_MAX_BYTES,
+	VAULT_STORAGE_KEY,
 } from "./vault-adapter";
 
 const timestamp = "2026-09-03T12:00:00.000Z";
@@ -261,5 +269,127 @@ describe("browser vault storage", () => {
 			LocalVaultStorageError,
 		);
 		expect(session.vaultKey).toEqual(new Uint8Array([0, 0, 0]));
+	});
+});
+
+describe("encrypted vault backup", () => {
+	const memoryStorage = (initial: string | null = null) => {
+		let value = initial;
+		const adapter: LocalVaultStorage = {
+			getItem: vi.fn((key: string) =>
+				key === VAULT_STORAGE_KEY ? value : null,
+			),
+			setItem: vi.fn((key: string, next: string) => {
+				if (key === VAULT_STORAGE_KEY) value = next;
+			}),
+		};
+		return { adapter, read: () => value };
+	};
+
+	it("exports ciphertext without vault plaintext and round-trips through unlock", async () => {
+		const password = "correct horse battery staple";
+		const source = memoryStorage();
+		const created = await Effect.runPromise(
+			createVault(password, {
+				id: "Vault / Unsafe ID",
+				now: timestamp,
+			}),
+		);
+		const sourceVault = persistCreatedVault(created, source.adapter);
+		const secretDocument: VaultDocument = {
+			...sourceVault.document,
+			updatedAt: "2026-09-03T12:03:00.000Z",
+			items: [
+				{
+					id: "login-1",
+					title: "Plaintext marker title",
+					username: "private@example.test",
+					password: "never-export-this-secret",
+					website: "https://example.test",
+					notes: "plaintext marker notes",
+					favorite: true,
+					createdAt: timestamp,
+					updatedAt: "2026-09-03T12:03:00.000Z",
+				},
+			],
+		};
+		await saveLocalVault(sourceVault, secretDocument);
+
+		const backup = exportLocalVaultBackup(source.adapter);
+		expect(backup.serialized).toBe(source.read());
+		expect(backup.filename).toBe(
+			"svrgn-vault-vault-unsafe-id-2026-09-03T12-03-00Z.svrgn",
+		);
+		expect(backup.serialized).toContain('"format":"svrgn-encrypted-vault"');
+		for (const plaintext of [
+			"Plaintext marker title",
+			"private@example.test",
+			"never-export-this-secret",
+			"plaintext marker notes",
+		]) {
+			expect(backup.serialized).not.toContain(plaintext);
+		}
+
+		const restored = memoryStorage();
+		importLocalVaultBackup(backup.serialized, { storage: restored.adapter });
+		const unlocked = await unlockLocalVault(password, restored.adapter);
+		expect(unlocked.document).toEqual(secretDocument);
+		await Promise.all([sourceVault.close(), unlocked.close()]);
+	});
+
+	it.each([
+		["invalid JSON", "{not-json"],
+		[
+			"wrong format",
+			JSON.stringify({ ...makeEnvelope(timestamp), format: "not-svrgn" }),
+		],
+		[
+			"unsupported version",
+			JSON.stringify({ ...makeEnvelope(timestamp), version: 2 }),
+		],
+	])("rejects %s without changing existing data", (_case, incoming) => {
+		const existing = JSON.stringify(makeEnvelope(timestamp));
+		const target = memoryStorage(existing);
+		expect(() =>
+			importLocalVaultBackup(incoming, {
+				overwriteExisting: true,
+				storage: target.adapter,
+			}),
+		).toThrow("not a supported Svrgn encrypted vault backup");
+		expect(target.read()).toBe(existing);
+		expect(target.adapter.setItem).not.toHaveBeenCalled();
+	});
+
+	it("rejects an oversized backup without changing existing data", () => {
+		const existing = JSON.stringify(makeEnvelope(timestamp));
+		const target = memoryStorage(existing);
+		expect(() =>
+			importLocalVaultBackup("x".repeat(VAULT_BACKUP_MAX_BYTES + 1), {
+				overwriteExisting: true,
+				storage: target.adapter,
+			}),
+		).toThrow("larger than 10 MB");
+		expect(target.read()).toBe(existing);
+		expect(target.adapter.setItem).not.toHaveBeenCalled();
+	});
+
+	it("requires explicit overwrite confirmation and preserves data on cancel", () => {
+		const existing = JSON.stringify(makeEnvelope(timestamp));
+		const incoming = JSON.stringify(makeEnvelope("2026-09-03T12:04:00.000Z"));
+		const target = memoryStorage(existing);
+
+		expect(() =>
+			importLocalVaultBackup(incoming, { storage: target.adapter }),
+		).toThrow("Import cancelled");
+		expect(target.read()).toBe(existing);
+		expect(target.adapter.setItem).not.toHaveBeenCalled();
+
+		expect(
+			importLocalVaultBackup(incoming, {
+				overwriteExisting: true,
+				storage: target.adapter,
+			}),
+		).toEqual(makeEnvelope("2026-09-03T12:04:00.000Z"));
+		expect(target.read()).toBe(incoming);
 	});
 });
