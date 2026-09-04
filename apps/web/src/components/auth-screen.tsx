@@ -18,6 +18,7 @@ type AuthScreenProps = {
 	onCreate: (password: string) => Promise<void>;
 	onUnlock: (password: string) => Promise<void>;
 	onImported: () => Promise<void> | void;
+	onRestore?: (password: string) => Promise<void>;
 	backupNotice?: string | null;
 };
 
@@ -28,6 +29,7 @@ export function AuthScreen({
 	onCreate,
 	onUnlock,
 	onImported,
+	onRestore,
 	backupNotice,
 }: AuthScreenProps) {
 	const [password, setPassword] = useState("");
@@ -152,8 +154,8 @@ export function AuthScreen({
 
 							<p className="local-note">
 								<Icon icon="info" size="sm" />
-								Stored only as encrypted data in this browser. Sync and recovery
-								are not part of this preview.
+								Stored as encrypted data. Account sync stays off until you
+								enable it explicitly.
 							</p>
 						</Stack>
 					</form>
@@ -170,6 +172,16 @@ export function AuthScreen({
 					isDisabled={isWorking}
 					onImported={onImported}
 				/>
+				{creating && onRestore ? (
+					<Button
+						label="Restore encrypted sync vault"
+						variant="secondary"
+						width="100%"
+						onClick={() => void onRestore(password)}
+						isLoading={isWorking}
+						isDisabled={isWorking || password.length === 0}
+					/>
+				) : null}
 				<a className="account-link" href="/account">
 					Sign in for encrypted sync and passkeys
 				</a>

@@ -6,10 +6,12 @@ import {
 	ENCRYPTED_RECORD_FORMAT_V2,
 	type EncryptedRecordEnvelopeV2,
 	MAX_WIRE_BIGINT,
+	parseVaultKeyEnvelopeV2,
 	SYNC_PROTOCOL_VERSION,
 	type SyncChangesResponse,
 	type SyncMutationBatchResponse,
 	type SyncMutationRequest,
+	type VaultKeyEnvelopeV2,
 } from "@svrgn/sync-protocol";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 
@@ -38,7 +40,35 @@ export class SyncCursorExhaustedError extends Error {
 	readonly name = "SyncCursorExhaustedError";
 }
 
+export class SyncCursorAheadError extends Error {
+	readonly name = "SyncCursorAheadError";
+
+	constructor(readonly currentCursor: string) {
+		super("The client cursor is ahead of the encrypted vault");
+	}
+}
+
+export class SyncVaultAlreadyExistsError extends Error {
+	readonly name = "SyncVaultAlreadyExistsError";
+
+	constructor() {
+		super("This account already has a different encrypted vault");
+	}
+}
+
+export interface SyncVaultBootstrap {
+	readonly keyEnvelope: VaultKeyEnvelopeV2;
+	readonly status: "created" | "existing";
+}
+
 export interface SyncStore {
+	getVault(input: {
+		readonly ownerUserId: string;
+	}): Promise<VaultKeyEnvelopeV2 | null>;
+	createVault(input: {
+		readonly ownerUserId: string;
+		readonly keyEnvelope: VaultKeyEnvelopeV2;
+	}): Promise<SyncVaultBootstrap>;
 	pullChanges(input: {
 		readonly ownerUserId: string;
 		readonly vaultId: string;
@@ -76,8 +106,30 @@ interface RecordRevisionRow extends QueryResultRow {
 	revision: string;
 }
 
+interface VaultEnvelopeRow extends QueryResultRow {
+	id: string;
+	key_envelope: unknown;
+}
+
 const encodeBase64Url = (value: Uint8Array): string =>
 	Buffer.from(value).toString("base64url");
+
+const sameKeyEnvelope = (
+	left: VaultKeyEnvelopeV2,
+	right: VaultKeyEnvelopeV2,
+): boolean =>
+	left.format === right.format &&
+	left.version === right.version &&
+	left.vaultId === right.vaultId &&
+	left.keyRevision === right.keyRevision &&
+	left.createdAt === right.createdAt &&
+	left.kdf.algorithm === right.kdf.algorithm &&
+	left.kdf.salt === right.kdf.salt &&
+	left.kdf.operationsLimit === right.kdf.operationsLimit &&
+	left.kdf.memoryLimit === right.kdf.memoryLimit &&
+	left.wrappedVaultKey.algorithm === right.wrappedVaultKey.algorithm &&
+	left.wrappedVaultKey.nonce === right.wrappedVaultKey.nonce &&
+	left.wrappedVaultKey.ciphertext === right.wrappedVaultKey.ciphertext;
 
 export const fingerprintSyncMutation = (
 	mutation: SyncMutationRequest,
@@ -129,6 +181,60 @@ const rollbackQuietly = async (client: PoolClient): Promise<void> => {
 };
 
 export const createPostgresSyncStore = (pool: Pool): SyncStore => ({
+	async getVault({ ownerUserId }) {
+		const result = await pool.query<VaultEnvelopeRow>(
+			`select "id", "key_envelope" from "sync_vault"
+			 where "owner_user_id" = $1::uuid`,
+			[ownerUserId],
+		);
+		const row = result.rows[0];
+		if (!row) return null;
+		const envelope = parseVaultKeyEnvelopeV2(row.key_envelope);
+		if (envelope.vaultId !== row.id) {
+			throw new Error("Stored key envelope does not match its vault");
+		}
+		return envelope;
+	},
+
+	async createVault({ ownerUserId, keyEnvelope }) {
+		const inserted = await pool.query<VaultEnvelopeRow>(
+			`insert into "sync_vault" (
+				"id", "owner_user_id", "protocol_version", "key_revision", "key_envelope"
+			 ) values ($1, $2::uuid, 2, $3::bigint, $4::jsonb)
+			 on conflict do nothing
+			 returning "id", "key_envelope"`,
+			[
+				keyEnvelope.vaultId,
+				ownerUserId,
+				keyEnvelope.keyRevision,
+				JSON.stringify(keyEnvelope),
+			],
+		);
+		const insertedRow = inserted.rows[0];
+		if (insertedRow) {
+			return {
+				keyEnvelope: parseVaultKeyEnvelopeV2(insertedRow.key_envelope),
+				status: "created",
+			};
+		}
+
+		const current = await pool.query<VaultEnvelopeRow>(
+			`select "id", "key_envelope" from "sync_vault"
+			 where "owner_user_id" = $1::uuid`,
+			[ownerUserId],
+		);
+		const row = current.rows[0];
+		if (!row) throw new SyncVaultAlreadyExistsError();
+		const existing = parseVaultKeyEnvelopeV2(row.key_envelope);
+		if (
+			row.id !== keyEnvelope.vaultId ||
+			!sameKeyEnvelope(existing, keyEnvelope)
+		) {
+			throw new SyncVaultAlreadyExistsError();
+		}
+		return { keyEnvelope: existing, status: "existing" };
+	},
+
 	async pullChanges({ ownerUserId, vaultId, afterCursor, limit }) {
 		// This is one PostgreSQL statement so the ownership check, cursor snapshot,
 		// and page all observe the same READ COMMITTED snapshot.
@@ -168,9 +274,10 @@ export const createPostgresSyncStore = (pool: Pool): SyncStore => ({
 		const hasMore = recordRows.length > limit;
 		const pageRows = recordRows.slice(0, limit);
 		const lastCursor = pageRows.at(-1)?.cursor;
-		const settledCursor =
-			BigInt(afterCursor) > BigInt(vaultCursor) ? afterCursor : vaultCursor;
-		const nextCursor = hasMore && lastCursor ? lastCursor : settledCursor;
+		if (BigInt(afterCursor) > BigInt(vaultCursor)) {
+			throw new SyncCursorAheadError(vaultCursor);
+		}
+		const nextCursor = hasMore && lastCursor ? lastCursor : vaultCursor;
 
 		return {
 			changes: pageRows.map((row) => ({

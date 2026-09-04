@@ -15,6 +15,7 @@ import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiSyncV2ChangesRouteImport } from './routes/api/sync/v2/changes'
 import { Route as ApiSyncV2MutationsRouteImport } from './routes/api/sync/v2/mutations'
+import { Route as ApiSyncV2VaultRouteImport } from './routes/api/sync/v2/vault'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +47,11 @@ const ApiSyncV2MutationsRoute = ApiSyncV2MutationsRouteImport.update({
   path: '/api/sync/v2/mutations',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSyncV2VaultRoute = ApiSyncV2VaultRouteImport.update({
+  id: '/api/sync/v2/vault',
+  path: '/api/sync/v2/vault',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/sync/v2/changes': typeof ApiSyncV2ChangesRoute
   '/api/sync/v2/mutations': typeof ApiSyncV2MutationsRoute
+  '/api/sync/v2/vault': typeof ApiSyncV2VaultRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/sync/v2/changes': typeof ApiSyncV2ChangesRoute
   '/api/sync/v2/mutations': typeof ApiSyncV2MutationsRoute
+  '/api/sync/v2/vault': typeof ApiSyncV2VaultRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/sync/v2/changes': typeof ApiSyncV2ChangesRoute
   '/api/sync/v2/mutations': typeof ApiSyncV2MutationsRoute
+  '/api/sync/v2/vault': typeof ApiSyncV2VaultRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/sync/v2/changes'
     | '/api/sync/v2/mutations'
+    | '/api/sync/v2/vault'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/sync/v2/changes'
     | '/api/sync/v2/mutations'
+    | '/api/sync/v2/vault'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/sync/v2/changes'
     | '/api/sync/v2/mutations'
+    | '/api/sync/v2/vault'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -106,6 +118,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiSyncV2ChangesRoute: typeof ApiSyncV2ChangesRoute
   ApiSyncV2MutationsRoute: typeof ApiSyncV2MutationsRoute
+  ApiSyncV2VaultRoute: typeof ApiSyncV2VaultRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSyncV2MutationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/sync/v2/vault': {
+      id: '/api/sync/v2/vault'
+      path: '/api/sync/v2/vault'
+      fullPath: '/api/sync/v2/vault'
+      preLoaderRoute: typeof ApiSyncV2VaultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -162,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiSyncV2ChangesRoute: ApiSyncV2ChangesRoute,
   ApiSyncV2MutationsRoute: ApiSyncV2MutationsRoute,
+  ApiSyncV2VaultRoute: ApiSyncV2VaultRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

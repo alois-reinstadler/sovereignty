@@ -4,7 +4,12 @@ import type {
 	VaultDocument,
 	VaultSession,
 } from "@svrgn/vault-core";
-import { createVault } from "@svrgn/vault-core";
+import {
+	addVaultItem,
+	convertVaultV1ToV2,
+	createVault,
+	createVaultItem,
+} from "@svrgn/vault-core";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
@@ -16,6 +21,7 @@ import {
 	LocalVaultStorageError,
 	makeUnlockedVault,
 	persistCreatedVault,
+	restoreLocalVaultFromSync,
 	saveLocalVault,
 	unlockLocalVault,
 	VAULT_BACKUP_MAX_BYTES,
@@ -391,5 +397,65 @@ describe("encrypted vault backup", () => {
 			}),
 		).toEqual(makeEnvelope("2026-09-03T12:04:00.000Z"));
 		expect(target.read()).toBe(incoming);
+	});
+});
+
+describe("v2 sync restore", () => {
+	it("verifies the master password before wrapping a key for sync", async () => {
+		const source = await Effect.runPromise(
+			createVault("correct horse battery staple", {
+				id: "sync-password-check",
+				now: timestamp,
+			}),
+		);
+		const storage: LocalVaultStorage = {
+			getItem: vi.fn(() => null),
+			setItem: vi.fn(),
+		};
+		const vault = persistCreatedVault(source, storage);
+		await expect(
+			vault.prepareInitialSync("mistyped password"),
+		).rejects.toThrow();
+		await vault.close();
+	});
+
+	it("rebuilds a local encrypted vault without persisting plaintext or the master password", async () => {
+		const password = "correct horse battery staple";
+		const created = await Effect.runPromise(
+			createVault(password, { id: "sync-vault", now: timestamp }),
+		);
+		const login = createVaultItem(
+			{
+				title: "Synced secret",
+				username: "private@example.test",
+				password: "not-in-storage",
+			},
+			{ id: "login-one", now: timestamp },
+		);
+		created.session.document = addVaultItem(
+			created.session.document,
+			login,
+			timestamp,
+		);
+		const converted = await Effect.runPromise(
+			convertVaultV1ToV2(created.session, password),
+		);
+		let serialized: string | null = null;
+		const storage: LocalVaultStorage = {
+			getItem: () => serialized,
+			setItem: (_key, value) => {
+				serialized = value;
+			},
+		};
+		const restored = await restoreLocalVaultFromSync(
+			converted.keyEnvelope,
+			converted.records,
+			password,
+			storage,
+		);
+		expect(restored.document.items).toEqual([login]);
+		expect(serialized).not.toContain(password);
+		expect(serialized).not.toContain(login.password);
+		await restored.close();
 	});
 });

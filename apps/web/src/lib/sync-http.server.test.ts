@@ -3,14 +3,18 @@ import {
 	parseDecimalBigInt,
 	SYNC_PROTOCOL_VERSION,
 	type SyncMutationRequest,
+	VAULT_KEY_FORMAT_V2,
+	type VaultKeyEnvelopeV2,
 } from "@svrgn/sync-protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSyncHttpHandlers } from "./sync-http.server";
 import {
+	SyncCursorAheadError,
 	SyncMutationIdReusedError,
 	SyncRevisionConflictError,
 	type SyncStore,
+	SyncVaultAlreadyExistsError,
 } from "./sync-store.server";
 
 const VAULT_ID = "vault-one";
@@ -33,11 +37,32 @@ const mutation = (): SyncMutationRequest => ({
 	},
 });
 
+const keyEnvelope = (): VaultKeyEnvelopeV2 => ({
+	format: VAULT_KEY_FORMAT_V2,
+	version: SYNC_PROTOCOL_VERSION,
+	vaultId: VAULT_ID,
+	keyRevision: parseDecimalBigInt("1"),
+	kdf: {
+		algorithm: "argon2id13",
+		salt: base64(16),
+		operationsLimit: 2,
+		memoryLimit: 65536,
+	},
+	wrappedVaultKey: {
+		algorithm: "xchacha20-poly1305-ietf",
+		nonce: base64(24),
+		ciphertext: base64(48),
+	},
+	createdAt: "2026-01-01T00:00:00.000Z",
+});
+
 describe("sync HTTP handlers", () => {
 	let store: SyncStore;
 
 	beforeEach(() => {
 		store = {
+			getVault: vi.fn(),
+			createVault: vi.fn(),
 			pullChanges: vi.fn(),
 			pushMutations: vi.fn(),
 		};
@@ -55,6 +80,77 @@ describe("sync HTTP handlers", () => {
 		expect(response.status).toBe(401);
 		expect(response.headers.get("cache-control")).toBe("no-store");
 		expect(store.pullChanges).not.toHaveBeenCalled();
+	});
+
+	it("creates and fetches a strictly validated owner-scoped key envelope", async () => {
+		const envelope = keyEnvelope();
+		vi.mocked(store.createVault).mockResolvedValue({
+			keyEnvelope: envelope,
+			status: "created",
+		});
+		vi.mocked(store.getVault).mockResolvedValue(envelope);
+		const handlers = createSyncHttpHandlers({
+			authenticate: async () => USER_ID,
+			store,
+		});
+		const created = await handlers.createVault(
+			new Request("https://vault.test/api/sync/v2/vault", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ keyEnvelope: envelope }),
+			}),
+		);
+		expect(created.status).toBe(201);
+		expect(store.createVault).toHaveBeenCalledWith({
+			ownerUserId: USER_ID,
+			keyEnvelope: envelope,
+		});
+
+		const fetched = await handlers.getVault(
+			new Request("https://vault.test/api/sync/v2/vault"),
+		);
+		expect(fetched.status).toBe(200);
+		expect(await fetched.json()).toEqual({ keyEnvelope: envelope });
+	});
+
+	it("rejects malformed bootstrap bodies before storage", async () => {
+		const handlers = createSyncHttpHandlers({
+			authenticate: async () => USER_ID,
+			store,
+		});
+		const response = await handlers.createVault(
+			new Request("https://vault.test/api/sync/v2/vault", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					keyEnvelope: keyEnvelope(),
+					plaintext: "never",
+				}),
+			}),
+		);
+		expect(response.status).toBe(400);
+		expect(store.createVault).not.toHaveBeenCalled();
+	});
+
+	it("uses the same conflict for an account vault mismatch or a vault-id collision", async () => {
+		vi.mocked(store.createVault).mockRejectedValue(
+			new SyncVaultAlreadyExistsError(),
+		);
+		const handlers = createSyncHttpHandlers({
+			authenticate: async () => USER_ID,
+			store,
+		});
+		const response = await handlers.createVault(
+			new Request("https://vault.test/api/sync/v2/vault", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ keyEnvelope: keyEnvelope() }),
+			}),
+		);
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			error: "vault_already_exists",
+		});
 	});
 
 	it("pulls a validated page scoped to the authenticated owner", async () => {
@@ -104,6 +200,27 @@ describe("sync HTTP handlers", () => {
 		);
 		expect(response.status).toBe(400);
 		expect(store.pullChanges).not.toHaveBeenCalled();
+	});
+
+	it("returns an explicit reset signal when a client cursor is ahead", async () => {
+		vi.mocked(store.pullChanges).mockRejectedValue(
+			new SyncCursorAheadError("7"),
+		);
+		const handlers = createSyncHttpHandlers({
+			authenticate: async () => USER_ID,
+			store,
+		});
+		const response = await handlers.pull(
+			new Request(
+				`https://vault.test/api/sync/v2/changes?vaultId=${VAULT_ID}&cursor=12`,
+			),
+		);
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			error: "cursor_reset_required",
+			currentCursor: "7",
+			resetCursor: "0",
+		});
 	});
 
 	it("does not reveal whether a vault belongs to another account", async () => {

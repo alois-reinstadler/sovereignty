@@ -5,9 +5,9 @@ Sovereignty clients. It never accepts plaintext vault fields or a vault key.
 An encrypted tombstone is an ordinary record envelope whose meaning only a
 client with the vault key can read.
 
-This slice assumes that an owned `sync_vault` and its validated key envelope
-already exist. A public vault bootstrap/key-envelope API is intentionally not
-part of these record routes.
+The bootstrap route creates one encrypted vault per account and returns its
+opaque key envelope on a new device. The server never receives the master
+password or unwrapped vault key.
 
 ## Common behavior
 
@@ -20,6 +20,24 @@ part of these record routes.
 - Revisions and cursors are canonical decimal strings, never JSON numbers.
 - Record ciphertext is URL-safe, unpadded base64 and is limited to 256 KiB.
 - A request can contain at most 100 mutations and at most 4 MiB of JSON.
+
+## Bootstrap or fetch the encrypted vault
+
+```http
+GET /api/sync/v2/vault
+POST /api/sync/v2/vault
+Content-Type: application/json
+
+{ "keyEnvelope": { "format": "svrgn-vault-key", "version": 2, "...": "..." } }
+```
+
+`GET` returns the authenticated account's validated v2 key envelope. `POST`
+creates it once and returns `201` with status `created`. Repeating the exact
+same create is idempotent and returns status `existing`. A different vault for
+the account and a vault-ID collision produce the same `409
+vault_already_exists`, so the route does not reveal another account's vault.
+The request accepts only `keyEnvelope`; plaintext and unknown fields are
+rejected.
 
 ## Pull current encrypted records
 
@@ -53,8 +71,13 @@ The response is a cursor-ordered page:
 
 The table is a compacted current-state feed: if one record changes repeatedly
 before a client pulls, only its newest encrypted envelope is required. Clients
-must continue with `nextCursor` until `hasMore` is false. The returned cursor
-never moves backward, even if a caller supplies a cursor ahead of the server.
+must continue with `nextCursor` until `hasMore` is false. A valid returned
+cursor never moves backward.
+
+A client cursor ahead of the authoritative vault is rejected with `409
+cursor_reset_required` and `resetCursor: "0"`. Clients must persist the rewind
+and replay the compacted encrypted state; echoing an ahead cursor would
+silently skip future changes.
 
 ## Push encrypted mutations
 

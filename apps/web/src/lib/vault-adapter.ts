@@ -1,15 +1,25 @@
+import type {
+	EncryptedRecordEnvelopeV2,
+	VaultKeyEnvelopeV2,
+} from "@svrgn/sync-protocol";
 import {
 	addVaultItem,
 	type CreatedVault,
+	convertVaultV1ToV2,
 	createVault,
 	createVaultItem,
+	decryptVaultRecord,
 	destroyVaultSession,
 	type EncryptedVaultEnvelope,
+	encryptLoginRecord,
+	encryptTombstoneRecord,
 	parseEncryptedVault,
 	removeVaultItem,
+	sealNewVaultSession,
 	sealVault,
 	serializeEncryptedVault,
 	unlockVault,
+	unwrapVaultKeyV2,
 	updateVaultItem,
 	type VaultSession,
 } from "@svrgn/vault-core";
@@ -229,6 +239,48 @@ export const makeUnlockedVault = (
 			pendingWrite = operation;
 			return operation;
 		},
+		prepareInitialSync: async (masterPassword) => {
+			if (closing)
+				return Promise.reject(new Error("The vault session is closing."));
+			// Re-authenticate against the durable local envelope before creating the
+			// remote key wrapper. A typo here would otherwise make new-device restore
+			// permanently impossible while the current unlocked session kept working.
+			const verified = await Effect.runPromise(
+				unlockVault(envelope, masterPassword),
+			);
+			destroyVaultSession(verified);
+			return Effect.runPromise(convertVaultV1ToV2(session, masterPassword));
+		},
+		encryptLoginForSync: (item, revision) => {
+			if (closing)
+				return Promise.reject(new Error("The vault session is closing."));
+			return Effect.runPromise(
+				encryptLoginRecord(
+					session.vaultKey,
+					session.document.id,
+					item,
+					revision,
+				),
+			);
+		},
+		encryptTombstoneForSync: (recordId, deletedAt, revision) => {
+			if (closing)
+				return Promise.reject(new Error("The vault session is closing."));
+			return Effect.runPromise(
+				encryptTombstoneRecord(
+					session.vaultKey,
+					session.document.id,
+					recordId,
+					deletedAt,
+					revision,
+				),
+			);
+		},
+		decryptSyncRecord: (record) => {
+			if (closing)
+				return Promise.reject(new Error("The vault session is closing."));
+			return Effect.runPromise(decryptVaultRecord(session.vaultKey, record));
+		},
 		close: () => {
 			if (closePromise) return closePromise;
 			closing = true;
@@ -239,6 +291,66 @@ export const makeUnlockedVault = (
 		},
 	};
 };
+
+export async function restoreLocalVaultFromSync(
+	keyEnvelope: VaultKeyEnvelopeV2,
+	records: ReadonlyArray<EncryptedRecordEnvelopeV2>,
+	masterPassword: string,
+	storage?: LocalVaultStorage,
+): Promise<UnlockedVault> {
+	const vaultKey = await Effect.runPromise(
+		unwrapVaultKeyV2(keyEnvelope, masterPassword),
+	);
+	try {
+		const items = new Map<string, VaultItem>();
+		let latestTimestamp = keyEnvelope.createdAt;
+		for (const record of records) {
+			if (record.vaultId !== keyEnvelope.vaultId) {
+				throw new Error("A synced record belongs to a different vault.");
+			}
+			const plaintext = await Effect.runPromise(
+				decryptVaultRecord(vaultKey, record),
+			);
+			if (plaintext.kind === "login") {
+				items.set(record.recordId, plaintext.item);
+				if (plaintext.item.updatedAt > latestTimestamp) {
+					latestTimestamp = plaintext.item.updatedAt;
+				}
+			} else {
+				items.delete(record.recordId);
+				if (plaintext.deletedAt > latestTimestamp) {
+					latestTimestamp = plaintext.deletedAt;
+				}
+			}
+		}
+		const session: VaultSession = {
+			vaultKey,
+			document: {
+				version: 1,
+				id: keyEnvelope.vaultId,
+				items: [...items.values()],
+				createdAt: keyEnvelope.createdAt,
+				updatedAt: latestTimestamp,
+			},
+		};
+		const created = await Effect.runPromise(
+			sealNewVaultSession(session, masterPassword),
+		);
+		return persistCreatedVault(created, storage);
+	} catch (cause) {
+		destroyVaultSession({
+			vaultKey,
+			document: {
+				version: 1,
+				id: keyEnvelope.vaultId,
+				items: [],
+				createdAt: keyEnvelope.createdAt,
+				updatedAt: keyEnvelope.createdAt,
+			},
+		});
+		throw cause;
+	}
+}
 
 export function persistCreatedVault(
 	created: CreatedVault,

@@ -29,6 +29,11 @@ export interface VaultCreationOptions {
 	kdf?: Partial<Pick<PasswordKdfParameters, "memoryLimit" | "operationsLimit">>;
 }
 
+export type VaultSessionSealingOptions = Pick<
+	VaultCreationOptions,
+	"kdf" | "randomBytes"
+>;
+
 type VaultError = VaultCryptoError | VaultFormatError;
 
 const encode = (bytes: Uint8Array): string =>
@@ -271,6 +276,76 @@ export const createVault = (
 				),
 			};
 			return { session: { vaultKey, document }, envelope };
+		} finally {
+			sodium.memzero(wrappingKey);
+		}
+	});
+
+/**
+ * Creates a v1 local envelope around an already-unlocked vault session. This is
+ * used when restoring authenticated v2 records on a new device. The password
+ * and wrapping key remain local and are never part of the returned document.
+ */
+export const sealNewVaultSession = (
+	session: VaultSession,
+	masterPassword: string,
+	options: VaultSessionSealingOptions = {},
+): Effect.Effect<CreatedVault, VaultError> =>
+	cryptoEffect(async () => {
+		await sodium.ready;
+		if (!masterPassword) {
+			throw new VaultFormatError({ message: "A master password is required" });
+		}
+		if (
+			!(session.vaultKey instanceof Uint8Array) ||
+			session.vaultKey.length !==
+				sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES
+		) {
+			throw new VaultFormatError({ message: "The vault key must be 32 bytes" });
+		}
+		// Reuse the strict document validator before encrypting imported state.
+		assertDocument(session.document, {
+			id: session.document.id,
+			createdAt: session.document.createdAt,
+			updatedAt: session.document.updatedAt,
+		} as EncryptedVaultEnvelope);
+
+		const takeRandom = options.randomBytes ?? sodium.randombytes_buf;
+		const kdf: PasswordKdfParameters = {
+			algorithm: "argon2id13",
+			salt: encode(takeRandom(sodium.crypto_pwhash_SALTBYTES)),
+			operationsLimit:
+				options.kdf?.operationsLimit ??
+				sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
+			memoryLimit:
+				options.kdf?.memoryLimit ?? sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE,
+		};
+		const envelopeBase = {
+			format: VAULT_FORMAT,
+			version: VAULT_FORMAT_VERSION,
+			id: session.document.id,
+			kdf,
+			createdAt: session.document.createdAt,
+			updatedAt: session.document.updatedAt,
+		};
+		const wrappingKey = deriveWrappingKey(masterPassword, kdf);
+		try {
+			const envelope: EncryptedVaultEnvelope = {
+				...envelopeBase,
+				wrappedVaultKey: encrypt(
+					session.vaultKey,
+					wrappingKey,
+					takeRandom(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES),
+					payloadAad(envelopeBase, "vault-key"),
+				),
+				encryptedDocument: encrypt(
+					encoder.encode(JSON.stringify(session.document)),
+					session.vaultKey,
+					takeRandom(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES),
+					payloadAad(envelopeBase, "document"),
+				),
+			};
+			return { session, envelope };
 		} finally {
 			sodium.memzero(wrappingKey);
 		}

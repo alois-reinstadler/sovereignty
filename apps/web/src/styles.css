@@ -29,6 +29,11 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 .preview-label { margin: -10px 0 0; color: #4f5856; font-size: 8px; font-weight: 700; letter-spacing: .12em; }
 .account-link { color: #86d4b4; font-size: 11px; text-decoration: none; }
 .account-link:hover { text-decoration: underline; }
+.sync-controls { display: flex; flex-direction: column; gap: 9px; padding: 11px; border: 1px solid #27302f; border-radius: 10px; background: #121718; }
+.sync-heading, .sync-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sync-state { padding: 2px 7px; border-radius: 999px; color: #b6bac2; background: #30343b; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.sync-state.enabled { color: #b9ffd4; background: #17432a; }
+.sync-caption { color: #92999b; font-size: 11px; line-height: 1.4; }
 .nav-account-link { padding: 8px 9px; border-top: 1px solid #1d2425; }
 .account-shell { min-height: 100vh; padding: 48px 24px; background: radial-gradient(circle at 50% 10%, rgba(73,169,131,.1), transparent 30%), #0a0d0f; }
 .account-column { display: flex; width: min(680px,100%); margin: 0 auto; flex-direction: column; gap: 20px; }

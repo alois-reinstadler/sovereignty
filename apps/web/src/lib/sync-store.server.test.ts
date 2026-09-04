@@ -3,6 +3,8 @@ import {
 	parseDecimalBigInt,
 	SYNC_PROTOCOL_VERSION,
 	type SyncMutationRequest,
+	VAULT_KEY_FORMAT_V2,
+	type VaultKeyEnvelopeV2,
 } from "@svrgn/sync-protocol";
 import type { Pool, PoolClient, QueryResult } from "pg";
 import { describe, expect, it, vi } from "vitest";
@@ -10,8 +12,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	createPostgresSyncStore,
 	fingerprintSyncMutation,
+	SyncCursorAheadError,
 	SyncMutationIdReusedError,
 	SyncRevisionConflictError,
+	SyncVaultAlreadyExistsError,
 } from "./sync-store.server";
 
 const VAULT_ID = "vault-one";
@@ -29,6 +33,25 @@ const mutation = (): SyncMutationRequest => ({
 		nonce: Buffer.alloc(24, 3).toString("base64url"),
 		ciphertext: Buffer.alloc(32, 5).toString("base64url"),
 	},
+});
+
+const keyEnvelope = (): VaultKeyEnvelopeV2 => ({
+	format: VAULT_KEY_FORMAT_V2,
+	version: SYNC_PROTOCOL_VERSION,
+	vaultId: VAULT_ID,
+	keyRevision: parseDecimalBigInt("1"),
+	kdf: {
+		algorithm: "argon2id13",
+		salt: Buffer.alloc(16, 1).toString("base64url"),
+		operationsLimit: 2,
+		memoryLimit: 65536,
+	},
+	wrappedVaultKey: {
+		algorithm: "xchacha20-poly1305-ietf",
+		nonce: Buffer.alloc(24, 2).toString("base64url"),
+		ciphertext: Buffer.alloc(48, 3).toString("base64url"),
+	},
+	createdAt: "2026-01-01T00:00:00.000Z",
 });
 
 const result = (rows: Record<string, unknown>[]): QueryResult =>
@@ -52,6 +75,57 @@ const scriptedClient = (responses: QueryResult[]) => {
 };
 
 describe("PostgreSQL sync store", () => {
+	it("creates an owner-scoped vault and returns the opaque key envelope", async () => {
+		const envelope = keyEnvelope();
+		const query = vi
+			.fn()
+			.mockResolvedValue(result([{ id: VAULT_ID, key_envelope: envelope }]));
+		const created = await createPostgresSyncStore({
+			query,
+		} as unknown as Pool).createVault({
+			ownerUserId: USER_ID,
+			keyEnvelope: envelope,
+		});
+		expect(created).toEqual({ keyEnvelope: envelope, status: "created" });
+		expect(query.mock.calls[0]?.[1]).toEqual([
+			VAULT_ID,
+			USER_ID,
+			"1",
+			JSON.stringify(envelope),
+		]);
+	});
+
+	it("replays only an identical create and hides owner/id collisions", async () => {
+		const envelope = keyEnvelope();
+		const identicalQuery = vi
+			.fn()
+			.mockResolvedValueOnce(result([]))
+			.mockResolvedValueOnce(
+				result([{ id: VAULT_ID, key_envelope: envelope }]),
+			);
+		expect(
+			await createPostgresSyncStore({
+				query: identicalQuery,
+			} as unknown as Pool).createVault({
+				ownerUserId: USER_ID,
+				keyEnvelope: envelope,
+			}),
+		).toMatchObject({ status: "existing" });
+
+		const collisionQuery = vi
+			.fn()
+			.mockResolvedValueOnce(result([]))
+			.mockResolvedValueOnce(result([]));
+		await expect(
+			createPostgresSyncStore({
+				query: collisionQuery,
+			} as unknown as Pool).createVault({
+				ownerUserId: USER_ID,
+				keyEnvelope: envelope,
+			}),
+		).rejects.toBeInstanceOf(SyncVaultAlreadyExistsError);
+	});
+
 	it("fingerprints every authenticated encrypted field deterministically", () => {
 		const first = mutation();
 		const same = mutation();
@@ -122,7 +196,7 @@ describe("PostgreSQL sync store", () => {
 		).toBeNull();
 	});
 
-	it("never moves a client cursor backward when no newer record exists", async () => {
+	it("rejects a client cursor ahead of the authoritative vault cursor", async () => {
 		const query = vi.fn().mockResolvedValue(
 			result([
 				{
@@ -136,13 +210,14 @@ describe("PostgreSQL sync store", () => {
 			]),
 		);
 		const store = createPostgresSyncStore({ query } as unknown as Pool);
-		const page = await store.pullChanges({
-			ownerUserId: USER_ID,
-			vaultId: VAULT_ID,
-			afterCursor: "12",
-			limit: 100,
-		});
-		expect(page).toEqual({ changes: [], nextCursor: "12", hasMore: false });
+		await expect(
+			store.pullChanges({
+				ownerUserId: USER_ID,
+				vaultId: VAULT_ID,
+				afterCursor: "12",
+				limit: 100,
+			}),
+		).rejects.toBeInstanceOf(SyncCursorAheadError);
 	});
 
 	it("serializes and atomically commits an encrypted mutation", async () => {

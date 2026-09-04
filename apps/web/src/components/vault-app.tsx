@@ -1,5 +1,6 @@
 import { Button, Card, Icon, Spinner, TextInput } from "@astryxdesign/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { authClient } from "#/lib/auth-client";
 import { applyChromeCsvImport } from "#/lib/chrome-csv-import";
 import type {
 	UnlockedVault,
@@ -8,11 +9,17 @@ import type {
 	VaultStatus,
 } from "#/lib/models";
 import {
+	fetchRemoteVaultForRestore,
+	metadataForRestoredVault,
+} from "#/lib/sync-client";
+import { indexedDbSyncMetadataStore } from "#/lib/sync-metadata";
+import {
 	createLocalVault,
 	createLogin,
 	hasStoredVault,
 	removeItem,
 	replaceItem,
+	restoreLocalVaultFromSync,
 	saveLocalVault,
 	unlockLocalVault,
 } from "#/lib/vault-adapter";
@@ -23,6 +30,7 @@ import { Brand } from "./brand";
 import { ChromeCsvImport } from "./chrome-csv-import";
 import { ItemDetail } from "./item-detail";
 import { ItemForm } from "./item-form";
+import { SyncControls } from "./sync-controls";
 
 const AUTO_LOCK_OPTIONS = [1, 5, 15, 30] as const;
 
@@ -34,6 +42,7 @@ interface ClipboardEntry {
 }
 
 export function VaultApp() {
+	const accountSession = authClient.useSession();
 	const [status, setStatus] = useState<VaultStatus>("loading");
 	const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 	const [document, setDocument] = useState<VaultDocument | null>(null);
@@ -45,6 +54,7 @@ export function VaultApp() {
 	const [isWorking, setIsWorking] = useState(false);
 	const [isLocking, setIsLocking] = useState(false);
 	const [isPersisting, setIsPersisting] = useState(false);
+	const [isSyncing, setIsSyncing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [backupNotice, setBackupNotice] = useState<string | null>(null);
@@ -56,6 +66,7 @@ export function VaultApp() {
 	const documentRef = useRef<VaultDocument | null>(null);
 	const lockingRef = useRef(false);
 	const persistingRef = useRef(false);
+	const syncingRef = useRef(false);
 	const clipboardEntryRef = useRef<ClipboardEntry | null>(null);
 
 	const bootstrap = useCallback(() => {
@@ -106,7 +117,7 @@ export function VaultApp() {
 
 	const lock = useCallback(async () => {
 		if (lockingRef.current) return;
-		if (persistingRef.current) {
+		if (persistingRef.current || syncingRef.current) {
 			setNotice(
 				"Wait for the current save to finish before locking the vault.",
 			);
@@ -201,6 +212,47 @@ export function VaultApp() {
 		}
 	};
 
+	const restoreFromSync = async (password: string) => {
+		const userId = accountSession.data?.user.id;
+		if (!userId) {
+			setError("Sign in to your Sovereignty account before restoring sync.");
+			return;
+		}
+		setIsWorking(true);
+		setError(null);
+		let restored: UnlockedVault | null = null;
+		try {
+			const remote = await fetchRemoteVaultForRestore();
+			restored = await restoreLocalVaultFromSync(
+				remote.keyEnvelope,
+				remote.records,
+				password,
+			);
+			const metadata = metadataForRestoredVault(
+				remote.records,
+				remote.cursor,
+				restored.document,
+			);
+			await indexedDbSyncMetadataStore.save(userId, metadata);
+			sessionRef.current = restored;
+			documentRef.current = restored.document;
+			setDocument(restored.document);
+			setStatus("unlocked");
+			setNotice("The encrypted vault was restored from your account.");
+			lastActivity.current = Date.now();
+			restored = null;
+		} catch (cause) {
+			await restored?.close();
+			setError(
+				cause instanceof Error
+					? cause.message
+					: "The synced vault could not be restored.",
+			);
+		} finally {
+			setIsWorking(false);
+		}
+	};
+
 	const finishBackupImport = async () => {
 		const unlocked = sessionRef.current;
 		if (unlocked) await unlocked.close();
@@ -220,6 +272,10 @@ export function VaultApp() {
 		const unlocked = sessionRef.current;
 		const current = documentRef.current;
 		if (!unlocked || !current || lockingRef.current) return false;
+		if (syncingRef.current) {
+			setNotice("Wait for sync to finish before changing the vault.");
+			return false;
+		}
 		if (persistingRef.current) {
 			setNotice(
 				"Wait for the current save to finish before making another change.",
@@ -341,6 +397,11 @@ export function VaultApp() {
 				onCreate={(password) => authenticate(password, true)}
 				onUnlock={(password) => authenticate(password, false)}
 				onImported={finishBackupImport}
+				onRestore={
+					status === "setup" && accountSession.data
+						? restoreFromSync
+						: undefined
+				}
 				backupNotice={backupNotice}
 			/>
 		);
@@ -398,17 +459,30 @@ export function VaultApp() {
 				</label>
 				<BackupControls
 					hasExistingVault
-					isDisabled={isLocking || isPersisting}
+					isDisabled={isLocking || isPersisting || isSyncing}
 					onImported={finishBackupImport}
 				/>
 				<ChromeCsvImport
 					existingItems={document.items}
-					isDisabled={isLocking || isPersisting}
+					isDisabled={isLocking || isPersisting || isSyncing}
 					onImport={(preview, strategy) =>
 						persist((current) =>
 							applyChromeCsvImport(current, preview, strategy),
 						)
 					}
+				/>
+				<SyncControls
+					vault={sessionRef.current as UnlockedVault}
+					document={document}
+					disabled={isLocking || isPersisting || isSyncing}
+					onWorkingChange={(working) => {
+						syncingRef.current = working;
+						setIsSyncing(working);
+					}}
+					onDocument={(next) => {
+						documentRef.current = next;
+						setDocument(next);
+					}}
 				/>
 				<a className="account-link nav-account-link" href="/account">
 					Account &amp; passkeys
@@ -418,7 +492,7 @@ export function VaultApp() {
 					variant="ghost"
 					icon={<span>⌁</span>}
 					onClick={() => void lock()}
-					isDisabled={isLocking || isPersisting}
+					isDisabled={isLocking || isPersisting || isSyncing}
 					width="100%"
 				/>
 			</aside>
@@ -436,7 +510,7 @@ export function VaultApp() {
 						onClick={() => {
 							if (!lockingRef.current) setEditing(createLogin());
 						}}
-						isDisabled={isLocking || isPersisting}
+						isDisabled={isLocking || isPersisting || isSyncing}
 					/>
 				</header>
 				<div className="search-wrap">
@@ -496,7 +570,7 @@ export function VaultApp() {
 									onClick={() => {
 										if (!lockingRef.current) setEditing(createLogin());
 									}}
-									isDisabled={isLocking || isPersisting}
+									isDisabled={isLocking || isPersisting || isSyncing}
 								/>
 							)}
 						</div>
@@ -509,7 +583,7 @@ export function VaultApp() {
 			>
 				<ItemDetail
 					item={selectedItem}
-					isDisabled={isLocking || isPersisting}
+					isDisabled={isLocking || isPersisting || isSyncing}
 					onBack={() => setMobileDetail(false)}
 					onCopy={copy}
 					onEdit={(item) => {
@@ -591,7 +665,7 @@ export function VaultApp() {
 										setMobileDetail(false);
 									}
 								}}
-								isDisabled={isLocking || isPersisting}
+								isDisabled={isLocking || isPersisting || isSyncing}
 							/>
 						</div>
 					</Card>
@@ -619,13 +693,13 @@ export function VaultApp() {
 					onClick={() => {
 						if (!lockingRef.current) setEditing(createLogin());
 					}}
-					isDisabled={isLocking || isPersisting}
+					isDisabled={isLocking || isPersisting || isSyncing}
 				/>
 				<Button
 					label="Lock vault"
 					variant="ghost"
 					onClick={() => void lock()}
-					isDisabled={isLocking || isPersisting}
+					isDisabled={isLocking || isPersisting || isSyncing}
 				/>
 			</div>
 		</main>

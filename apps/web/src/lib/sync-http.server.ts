@@ -6,13 +6,16 @@ import {
 	parseDecimalBigInt,
 	parseSyncChangesResponse,
 	parseSyncMutationBatchRequest,
+	parseVaultKeyEnvelopeV2,
 } from "@svrgn/sync-protocol";
 
 import {
+	SyncCursorAheadError,
 	SyncCursorExhaustedError,
 	SyncMutationIdReusedError,
 	SyncRevisionConflictError,
 	type SyncStore,
+	SyncVaultAlreadyExistsError,
 } from "./sync-store.server";
 
 const NO_STORE_HEADERS = { "cache-control": "no-store" } as const;
@@ -126,6 +129,71 @@ const authenticate = async (
 };
 
 export const createSyncHttpHandlers = (dependencies: SyncHttpDependencies) => ({
+	async getVault(request: Request): Promise<Response> {
+		try {
+			const ownerUserId = await authenticate(request, dependencies);
+			if (ownerUserId instanceof Response) return ownerUserId;
+			const keyEnvelope = await dependencies.store.getVault({ ownerUserId });
+			if (keyEnvelope === null) {
+				return errorResponse(404, "vault_not_found", "Vault not found");
+			}
+			return json({ keyEnvelope: parseVaultKeyEnvelopeV2(keyEnvelope) });
+		} catch (error) {
+			if (error instanceof ProtocolValidationError) {
+				return errorResponse(
+					500,
+					"invalid_stored_vault",
+					"The stored vault is invalid",
+				);
+			}
+			return errorResponse(500, "internal_error", "The sync request failed");
+		}
+	},
+
+	async createVault(request: Request): Promise<Response> {
+		try {
+			const ownerUserId = await authenticate(request, dependencies);
+			if (ownerUserId instanceof Response) return ownerUserId;
+			const body = await readBoundedJson(request);
+			if (
+				typeof body !== "object" ||
+				body === null ||
+				Array.isArray(body) ||
+				Object.keys(body).length !== 1 ||
+				!("keyEnvelope" in body)
+			) {
+				throw new ProtocolValidationError(
+					"The request must contain only keyEnvelope",
+				);
+			}
+			const keyEnvelope = parseVaultKeyEnvelopeV2(body.keyEnvelope);
+			const result = await dependencies.store.createVault({
+				ownerUserId,
+				keyEnvelope,
+			});
+			return json(result, result.status === "created" ? 201 : 200);
+		} catch (error) {
+			if (error instanceof PayloadTooLargeError) {
+				return errorResponse(
+					413,
+					"payload_too_large",
+					`The request body must not exceed ${MAX_SYNC_REQUEST_BYTES} bytes`,
+				);
+			}
+			if (error instanceof SyncVaultAlreadyExistsError) {
+				return errorResponse(409, "vault_already_exists", error.message);
+			}
+			if (
+				error instanceof ProtocolValidationError ||
+				error instanceof SyntaxError ||
+				error instanceof TypeError
+			) {
+				return errorResponse(400, "invalid_request", error.message);
+			}
+			return errorResponse(500, "internal_error", "The sync request failed");
+		}
+	},
+
 	async pull(request: Request): Promise<Response> {
 		try {
 			const ownerUserId = await authenticate(request, dependencies);
@@ -148,6 +216,12 @@ export const createSyncHttpHandlers = (dependencies: SyncHttpDependencies) => ({
 			}
 			return json(parseSyncChangesResponse(result));
 		} catch (error) {
+			if (error instanceof SyncCursorAheadError) {
+				return errorResponse(409, "cursor_reset_required", error.message, {
+					currentCursor: error.currentCursor,
+					resetCursor: "0",
+				});
+			}
 			if (error instanceof ProtocolValidationError) {
 				return errorResponse(400, "invalid_request", error.message);
 			}
