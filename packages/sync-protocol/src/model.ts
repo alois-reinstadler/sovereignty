@@ -6,6 +6,10 @@ export const ENCRYPTION_ALGORITHM = "xchacha20-poly1305-ietf" as const;
 /** PostgreSQL bigint is the storage boundary selected for revisions/cursors. */
 export const MAX_WIRE_BIGINT = 9_223_372_036_854_775_807n;
 export const MAX_RECORD_CIPHERTEXT_BYTES = 256 * 1024;
+export const MAX_SYNC_BATCH_MUTATIONS = 100;
+export const MAX_SYNC_PAGE_SIZE = 1_000;
+export const DEFAULT_SYNC_PAGE_SIZE = 100;
+export const MAX_SYNC_REQUEST_BYTES = 4 * 1024 * 1024;
 
 /** Canonical, unsigned base-10 integer. It never crosses JSON as a JS number. */
 export type DecimalBigInt = string & { readonly DecimalBigInt: unique symbol };
@@ -47,6 +51,23 @@ export interface SyncMutationRequest {
 	mutationId: string;
 	baseRevision: DecimalBigInt;
 	record: EncryptedRecordEnvelopeV2;
+}
+
+export interface SyncMutationBatchRequest {
+	mutations: ReadonlyArray<SyncMutationRequest>;
+}
+
+export interface SyncMutationResult {
+	mutationId: string;
+	recordId: string;
+	revision: DecimalBigInt;
+	cursor: DecimalBigInt;
+	status: "applied" | "replayed";
+}
+
+export interface SyncMutationBatchResponse {
+	results: ReadonlyArray<SyncMutationResult>;
+	nextCursor: DecimalBigInt;
 }
 
 export interface SyncChange {

@@ -5,11 +5,13 @@ import {
 	type EncryptedPayloadV2,
 	type EncryptedRecordEnvelopeV2,
 	MAX_RECORD_CIPHERTEXT_BYTES,
+	MAX_SYNC_BATCH_MUTATIONS,
 	MAX_WIRE_BIGINT,
 	type PasswordKdfParametersV2,
 	SYNC_PROTOCOL_VERSION,
 	type SyncChange,
 	type SyncChangesResponse,
+	type SyncMutationBatchRequest,
 	type SyncMutationRequest,
 	VAULT_KEY_FORMAT_V2,
 	type VaultKeyEnvelopeV2,
@@ -306,6 +308,28 @@ export const parseSyncMutationRequest = (
 		fail("record.revision must equal baseRevision + 1");
 	}
 	return mutation as unknown as SyncMutationRequest;
+};
+
+export const parseSyncMutationBatchRequest = (
+	value: unknown,
+): SyncMutationBatchRequest => {
+	const batch = assertObject(value, "SyncMutationBatchRequest");
+	if (!hasExactKeys(batch, ["mutations"])) {
+		fail("SyncMutationBatchRequest contains missing or unknown fields");
+	}
+	if (
+		!Array.isArray(batch.mutations) ||
+		batch.mutations.length === 0 ||
+		batch.mutations.length > MAX_SYNC_BATCH_MUTATIONS
+	) {
+		fail(
+			`mutations must contain between 1 and ${MAX_SYNC_BATCH_MUTATIONS} entries`,
+		);
+	}
+	for (const mutation of batch.mutations as ReadonlyArray<unknown>) {
+		parseSyncMutationRequest(mutation);
+	}
+	return batch as unknown as SyncMutationBatchRequest;
 };
 
 export const parseSyncChange = (value: unknown): SyncChange => {

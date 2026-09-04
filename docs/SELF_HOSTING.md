@@ -1,9 +1,11 @@
 # Self-hosting Sovereignty
 
 This deployment foundation runs the TanStack Start server and PostgreSQL on
-infrastructure you control. It currently exposes account authentication and a
-database-aware health check. Encrypted sync mutation routes are not implemented
-yet, so this is not a production password-manager release.
+infrastructure you control. It exposes account authentication, a database-aware
+health check, and authenticated protocol-v2 routes for opaque encrypted records.
+Vault creation/key-envelope provisioning and client-side synchronization are
+still separate unfinished milestones, so this is not a production password-
+manager release.
 
 ## Security boundary
 
@@ -103,10 +105,24 @@ password recovery must remain disabled until an operator explicitly configures
 a self-hosted or chosen mail service and the product communicates that account
 recovery does not decrypt a vault.
 
+## Encrypted sync API
+
+The same-origin API exposes `GET /api/sync/v2/changes` and
+`POST /api/sync/v2/mutations`. Both require a Better Auth session cookie and are
+documented in [`docs/SYNC_API.md`](./SYNC_API.md). Keep the routes behind HTTPS;
+never expose them as a separate cross-origin service with relaxed cookie rules.
+
+The server stores ciphertext, nonces, record and vault identifiers, revisions,
+cursors, mutation UUIDs, ciphertext fingerprints, sizes, and timestamps. It
+does not receive a vault key, master password, decrypted item, or plaintext
+deletion flag. Encrypted tombstones use the same record envelope and must be
+retained so offline clients can observe deletion.
+
 ## Verification status
 
-Unit tests validate environment and authentication configuration without a
-database. Docker and PostgreSQL are unavailable in the current development
-environment, so image construction, Compose startup, schema application, and a
-backup/restore drill remain required integration checks on a Docker-capable
-host.
+Unit tests validate environment, authentication, sync request handling, owner
+scoping, paging, conflicts, idempotent retries, and transaction boundaries with
+mocked PostgreSQL interfaces. Docker and PostgreSQL are unavailable in the
+current development environment, so image construction, schema application,
+concurrent transaction testing, and a backup/restore drill remain required
+integration checks on a Docker-capable host.

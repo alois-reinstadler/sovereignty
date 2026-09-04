@@ -6,11 +6,13 @@ import {
 	encodeRecordAad,
 	encodeVaultKeyAad,
 	MAX_RECORD_CIPHERTEXT_BYTES,
+	MAX_SYNC_BATCH_MUTATIONS,
 	MAX_WIRE_BIGINT,
 	ProtocolValidationError,
 	parseDecimalBigInt,
 	parseEncryptedRecordEnvelopeV2,
 	parseSyncChangesResponse,
+	parseSyncMutationBatchRequest,
 	parseSyncMutationRequest,
 	parseVaultKeyEnvelopeV2,
 	SYNC_PROTOCOL_VERSION,
@@ -133,6 +135,28 @@ describe("sync protocol validation", () => {
 			hasMore: false,
 		};
 		expect(parseSyncChangesResponse(response)).toBe(response);
+	});
+
+	it("validates bounded, non-empty mutation batches", () => {
+		const mutation = {
+			mutationId: MUTATION_ID,
+			baseRevision: "0",
+			record: record(),
+		};
+		expect(parseSyncMutationBatchRequest({ mutations: [mutation] })).toEqual({
+			mutations: [mutation],
+		});
+		expect(() => parseSyncMutationBatchRequest({ mutations: [] })).toThrow(
+			/between 1 and 100/,
+		);
+		expect(() =>
+			parseSyncMutationBatchRequest({
+				mutations: Array.from(
+					{ length: MAX_SYNC_BATCH_MUTATIONS + 1 },
+					() => mutation,
+				),
+			}),
+		).toThrow(/between 1 and 100/);
 	});
 
 	it("rejects revision jumps, unknown fields, and malformed binary fields", () => {

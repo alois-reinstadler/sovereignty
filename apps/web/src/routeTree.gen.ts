@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiSyncV2ChangesRouteImport } from './routes/api/sync/v2/changes'
+import { Route as ApiSyncV2MutationsRouteImport } from './routes/api/sync/v2/mutations'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +30,69 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSyncV2ChangesRoute = ApiSyncV2ChangesRouteImport.update({
+  id: '/api/sync/v2/changes',
+  path: '/api/sync/v2/changes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSyncV2MutationsRoute = ApiSyncV2MutationsRouteImport.update({
+  id: '/api/sync/v2/mutations',
+  path: '/api/sync/v2/mutations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/sync/v2/changes': typeof ApiSyncV2ChangesRoute
+  '/api/sync/v2/mutations': typeof ApiSyncV2MutationsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/sync/v2/changes': typeof ApiSyncV2ChangesRoute
+  '/api/sync/v2/mutations': typeof ApiSyncV2MutationsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/sync/v2/changes': typeof ApiSyncV2ChangesRoute
+  '/api/sync/v2/mutations': typeof ApiSyncV2MutationsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/health' | '/api/auth/$'
+  fullPaths:
+    | '/'
+    | '/api/health'
+    | '/api/auth/$'
+    | '/api/sync/v2/changes'
+    | '/api/sync/v2/mutations'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/health' | '/api/auth/$'
-  id: '__root__' | '/' | '/api/health' | '/api/auth/$'
+  to:
+    | '/'
+    | '/api/health'
+    | '/api/auth/$'
+    | '/api/sync/v2/changes'
+    | '/api/sync/v2/mutations'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/health'
+    | '/api/auth/$'
+    | '/api/sync/v2/changes'
+    | '/api/sync/v2/mutations'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiSyncV2ChangesRoute: typeof ApiSyncV2ChangesRoute
+  ApiSyncV2MutationsRoute: typeof ApiSyncV2MutationsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +118,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/sync/v2/changes': {
+      id: '/api/sync/v2/changes'
+      path: '/api/sync/v2/changes'
+      fullPath: '/api/sync/v2/changes'
+      preLoaderRoute: typeof ApiSyncV2ChangesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sync/v2/mutations': {
+      id: '/api/sync/v2/mutations'
+      path: '/api/sync/v2/mutations'
+      fullPath: '/api/sync/v2/mutations'
+      preLoaderRoute: typeof ApiSyncV2MutationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +139,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiSyncV2ChangesRoute: ApiSyncV2ChangesRoute,
+  ApiSyncV2MutationsRoute: ApiSyncV2MutationsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
