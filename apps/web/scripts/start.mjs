@@ -40,4 +40,4 @@ const server = serve({
 });
 
 await server.ready();
-console.log(`SVRGN listening on http://${hostname}:${port}`);
+console.log(`Sovereignty listening on http://${hostname}:${port}`);

@@ -1,4 +1,4 @@
-# SVRGN Desktop
+# Sovereignty Desktop
 
 This package wraps the shared `@svrgn/web` TanStack Start SPA in a Tauri 2
 desktop window. It does not load remote application content and grants the

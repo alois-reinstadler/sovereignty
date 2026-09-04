@@ -9,7 +9,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
 			</span>
 			{compact ? null : (
 				<span className="brand-wordmark">
-					<strong>Svrgn</strong>
+					<strong>Sovereignty</strong>
 					<small>Vault</small>
 				</span>
 			)}

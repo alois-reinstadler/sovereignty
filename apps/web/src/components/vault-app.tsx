@@ -298,8 +298,8 @@ export function VaultApp() {
 							<h1>Your vault could not be opened</h1>
 							<p>{bootstrapError}</p>
 							<p>
-								Svrgn did not modify the stored data. Restore browser storage
-								access, then retry.
+								Sovereignty did not modify the stored data. Restore browser
+								storage access, then retry.
 							</p>
 						</div>
 						<Button

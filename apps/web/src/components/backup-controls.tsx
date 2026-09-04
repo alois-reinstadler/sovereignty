@@ -142,7 +142,7 @@ export function BackupControls({
 				type="file"
 				accept=".svrgn,application/json"
 				className="visually-hidden-field"
-				aria-label="Choose encrypted Svrgn backup"
+				aria-label="Choose encrypted Sovereignty backup"
 				onChange={(event) => void selectBackup(event.target.files?.[0])}
 			/>
 			{message ? (

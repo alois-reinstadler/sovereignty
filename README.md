@@ -1,6 +1,6 @@
-# SVRGN
+# Sovereignty
 
-SVRGN is an open-source, self-hostable password manager in active development.
+Sovereignty is an open-source, self-hostable password manager in active development.
 The first milestone is a local encrypted vault shared by a TanStack Start web app
 and a Tauri desktop shell.
 

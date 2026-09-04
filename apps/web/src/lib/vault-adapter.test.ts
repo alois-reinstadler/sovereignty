@@ -355,7 +355,7 @@ describe("encrypted vault backup", () => {
 				overwriteExisting: true,
 				storage: target.adapter,
 			}),
-		).toThrow("not a supported Svrgn encrypted vault backup");
+		).toThrow("not a supported Sovereignty encrypted vault backup");
 		expect(target.read()).toBe(existing);
 		expect(target.adapter.setItem).not.toHaveBeenCalled();
 	});

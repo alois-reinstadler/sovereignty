@@ -2,7 +2,7 @@
 
 ## Development status
 
-SVRGN is currently a development preview. Do not use it to store real passwords,
+Sovereignty is currently a development preview. Do not use it to store real passwords,
 recovery codes, private keys, or other sensitive information. The project has
 not received an independent security audit and does not yet provide recovery,
 backups, signed releases, or a stable encrypted-data compatibility guarantee.

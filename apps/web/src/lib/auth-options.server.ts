@@ -12,7 +12,7 @@ export const buildAuthOptions = (
 	environment: ServerEnvironment,
 	database: Pool,
 ): BetterAuthOptions => ({
-	appName: "SVRGN",
+	appName: "Sovereignty",
 	baseURL: environment.betterAuthUrl,
 	secret: environment.betterAuthSecret,
 	database,

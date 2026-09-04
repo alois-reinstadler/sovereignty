@@ -107,7 +107,7 @@ export function parseEncryptedVaultBackup(
 	} catch (cause) {
 		throw new LocalVaultStorageError(
 			"parse",
-			"The selected file is not a supported Svrgn encrypted vault backup.",
+			"The selected file is not a supported Sovereignty encrypted vault backup.",
 			cause,
 		);
 	}

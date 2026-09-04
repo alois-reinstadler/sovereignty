@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SVRGN",
+  "productName": "Sovereignty",
   "version": "0.1.0",
   "identifier": "app.svrgn.desktop",
   "build": {
@@ -17,7 +17,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "SVRGN",
+        "title": "Sovereignty",
         "width": 1180,
         "height": 760,
         "minWidth": 900,

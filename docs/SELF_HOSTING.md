@@ -1,4 +1,4 @@
-# Self-hosting SVRGN
+# Self-hosting Sovereignty
 
 This deployment foundation runs the TanStack Start server and PostgreSQL on
 infrastructure you control. It currently exposes account authentication and a
@@ -7,7 +7,7 @@ yet, so this is not a production password-manager release.
 
 ## Security boundary
 
-SVRGN uses two independent secrets:
+Sovereignty uses two independent secrets:
 
 - The **account password** authenticates to Better Auth and crosses the network
   over TLS.
