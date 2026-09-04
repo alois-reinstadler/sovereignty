@@ -2,7 +2,13 @@ import { Banner, Button, TextInput } from "@astryxdesign/core";
 import { useCallback, useEffect, useState } from "react";
 import { authClient } from "#/lib/auth-client";
 import type { UnlockedVault, VaultDocument } from "#/lib/models";
-import { enableEncryptedSync, syncNow } from "#/lib/sync-client";
+import {
+	enableEncryptedSync,
+	inspectSyncConflicts,
+	resolveSyncConflict,
+	type SyncConflictSummary,
+	syncNow,
+} from "#/lib/sync-client";
 import {
 	indexedDbSyncMetadataStore,
 	type SyncMetadata,
@@ -27,7 +33,11 @@ export function SyncControls({
 	const [metadata, setMetadata] = useState<SyncMetadata | null>(null);
 	const [password, setPassword] = useState("");
 	const [showEnable, setShowEnable] = useState(false);
-	const [working, setWorking] = useState<"enable" | "sync" | null>(null);
+	const [working, setWorking] = useState<string | null>(null);
+	const [conflicts, setConflicts] = useState<
+		ReadonlyArray<SyncConflictSummary>
+	>([]);
+	const [confirmRemote, setConfirmRemote] = useState<string | null>(null);
 	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
@@ -35,14 +45,28 @@ export function SyncControls({
 		const userId = session.data?.user.id;
 		if (!userId) {
 			setMetadata(null);
+			setConflicts([]);
 			return;
 		}
 		try {
-			setMetadata(await indexedDbSyncMetadataStore.load(userId));
+			const next = await indexedDbSyncMetadataStore.load(userId);
+			setMetadata(next);
+			setConflicts(
+				next?.conflicts.length
+					? await inspectSyncConflicts({
+							ownerUserId: userId,
+							vault,
+							document,
+							store: indexedDbSyncMetadataStore,
+						})
+					: [],
+			);
 		} catch {
-			setError("Sync metadata could not be read from this browser.");
+			setError(
+				"Sync metadata or an encrypted conflict could not be read on this device.",
+			);
 		}
-	}, [session.data?.user.id]);
+	}, [document, session.data?.user.id, vault]);
 
 	useEffect(() => {
 		void refresh();
@@ -126,6 +150,47 @@ export function SyncControls({
 		}
 	};
 
+	const resolveConflict = async (
+		conflict: SyncConflictSummary,
+		resolution: "keep-local" | "use-remote",
+	) => {
+		if (working) return;
+		const operation = `${resolution}:${conflict.recordId}:${conflict.remoteRevision}`;
+		setWorking(operation);
+		onWorkingChange(true);
+		setError(null);
+		setMessage(null);
+		try {
+			const result = await resolveSyncConflict({
+				ownerUserId: authenticated.user.id,
+				vault,
+				document,
+				recordId: conflict.recordId,
+				remoteRevision: conflict.remoteRevision,
+				resolution,
+				store: indexedDbSyncMetadataStore,
+			});
+			onDocument(result.document);
+			setConfirmRemote(null);
+			await refresh();
+			setMessage(
+				resolution === "keep-local"
+					? "The local version is encrypted and queued on top of the remote revision. Select Sync now to upload it."
+					: "The remote version replaced the local candidate on this device.",
+			);
+		} catch (cause) {
+			setError(
+				cause instanceof Error
+					? cause.message
+					: "The conflict could not be resolved. No pending change was discarded.",
+			);
+			await refresh();
+		} finally {
+			setWorking(null);
+			onWorkingChange(false);
+		}
+	};
+
 	return (
 		<div className="sync-controls">
 			<div className="sync-heading">
@@ -150,6 +215,78 @@ export function SyncControls({
 						{metadata.outbox.length} queued · {metadata.conflicts.length}{" "}
 						conflicts
 					</span>
+					{conflicts.length > 0 ? (
+						<ul className="sync-conflict-list" aria-label="Sync conflicts">
+							{conflicts.map((conflict) => {
+								const key = `${conflict.recordId}:${conflict.remoteRevision}`;
+								return (
+									<li className="sync-conflict" key={key}>
+										<strong>Conflict: {conflict.localLabel}</strong>
+										<span className="sync-caption">
+											This device: {conflict.localLabel}
+											<br />
+											Other device: {conflict.remoteLabel}
+											<br />
+											Remote revision {conflict.remoteRevision}
+										</span>
+										<Button
+											label="Keep local (overwrite remote)"
+											variant="secondary"
+											size="sm"
+											width="100%"
+											onClick={() =>
+												void resolveConflict(conflict, "keep-local")
+											}
+											isLoading={working === `keep-local:${key}`}
+											isDisabled={disabled || working !== null}
+										/>
+										{confirmRemote === key ? (
+											<div className="sync-conflict-confirm">
+												<span className="sync-caption">
+													This permanently replaces the pending local version.
+												</span>
+												<div className="sync-actions">
+													<Button
+														label="Cancel"
+														variant="ghost"
+														size="sm"
+														onClick={() => setConfirmRemote(null)}
+													/>
+													<Button
+														label={
+															conflict.remoteKind === "tombstone"
+																? "Confirm remote deletion"
+																: "Confirm replace local"
+														}
+														variant="destructive"
+														size="sm"
+														onClick={() =>
+															void resolveConflict(conflict, "use-remote")
+														}
+														isLoading={working === `use-remote:${key}`}
+														isDisabled={disabled || working !== null}
+													/>
+												</div>
+											</div>
+										) : (
+											<Button
+												label={
+													conflict.remoteKind === "tombstone"
+														? "Use remote deletion…"
+														: "Use remote (replace local)…"
+												}
+												variant="destructive"
+												size="sm"
+												width="100%"
+												onClick={() => setConfirmRemote(key)}
+												isDisabled={disabled || working !== null}
+											/>
+										)}
+									</li>
+								);
+							})}
+						</ul>
+					) : null}
 				</>
 			) : showEnable ? (
 				<>

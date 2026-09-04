@@ -221,6 +221,182 @@ const withoutItem = (
 	updatedAt: deletedAt > document.updatedAt ? deletedAt : document.updatedAt,
 });
 
+const requireMetadataForDocument = async (
+	ownerUserId: string,
+	document: VaultDocument,
+	store: SyncMetadataStore,
+): Promise<SyncMetadata> => {
+	const metadata = await store.load(ownerUserId);
+	if (!metadata) {
+		throw new SyncClientError(
+			"Encrypted sync is not enabled on this device.",
+			"sync_not_enabled",
+		);
+	}
+	if (metadata.vaultId !== document.id) {
+		throw new SyncClientError(
+			"The local vault does not match this account's sync vault.",
+			"vault_mismatch",
+		);
+	}
+	return metadata;
+};
+
+export interface SyncConflictSummary {
+	recordId: string;
+	remoteRevision: string;
+	detectedAt: string;
+	remoteKind: "login" | "tombstone";
+	remoteLabel: string;
+	localLabel: string;
+}
+
+export const inspectSyncConflicts = async (input: {
+	ownerUserId: string;
+	vault: UnlockedVault;
+	document: VaultDocument;
+	store: SyncMetadataStore;
+}): Promise<ReadonlyArray<SyncConflictSummary>> => {
+	const metadata = await requireMetadataForDocument(
+		input.ownerUserId,
+		input.document,
+		input.store,
+	);
+	const summaries: SyncConflictSummary[] = [];
+	for (const conflict of metadata.conflicts) {
+		if (conflict.record.vaultId !== metadata.vaultId) {
+			throw new SyncClientError(
+				"Stored conflict metadata belongs to a different vault.",
+				"vault_mismatch",
+			);
+		}
+		const plaintext = await input.vault.decryptSyncRecord(conflict.record);
+		const local = localItem(input.document, conflict.record.recordId);
+		summaries.push({
+			recordId: conflict.record.recordId,
+			remoteRevision: conflict.record.revision,
+			detectedAt: conflict.detectedAt,
+			remoteKind: plaintext.kind,
+			remoteLabel:
+				plaintext.kind === "login"
+					? plaintext.item.title || "Untitled login"
+					: "Deleted on another device",
+			localLabel: local?.title || "Deleted on this device",
+		});
+	}
+	return summaries;
+};
+
+export const resolveSyncConflict = async (input: {
+	ownerUserId: string;
+	vault: UnlockedVault;
+	document: VaultDocument;
+	recordId: string;
+	remoteRevision: string;
+	resolution: "keep-local" | "use-remote";
+	store: SyncMetadataStore;
+}): Promise<{
+	document: VaultDocument;
+	queued: boolean;
+	conflicts: number;
+}> => {
+	const metadata = await requireMetadataForDocument(
+		input.ownerUserId,
+		input.document,
+		input.store,
+	);
+	const selected = metadata.conflicts.find(
+		({ record }) =>
+			record.recordId === input.recordId &&
+			record.revision === input.remoteRevision,
+	);
+	if (!selected) {
+		throw new SyncClientError(
+			"This sync conflict no longer exists.",
+			"conflict_not_found",
+		);
+	}
+	if (selected.record.vaultId !== metadata.vaultId) {
+		throw new SyncClientError(
+			"Stored conflict metadata belongs to a different vault.",
+			"vault_mismatch",
+		);
+	}
+	// Authenticate the remote record before trusting its revision or removing
+	// any pending local ciphertext.
+	const remote = await input.vault.decryptSyncRecord(selected.record);
+	const nextMetadata = structuredClone(metadata);
+	nextMetadata.conflicts = nextMetadata.conflicts.filter(
+		({ record }) =>
+			!(
+				record.recordId === input.recordId &&
+				record.revision === input.remoteRevision
+			),
+	);
+	nextMetadata.outbox = nextMetadata.outbox.filter(
+		({ mutation }) => mutation.record.recordId !== input.recordId,
+	);
+	nextMetadata.records[input.recordId] = {
+		revision: selected.record.revision,
+		localUpdatedAt: remote.kind === "login" ? remote.item.updatedAt : null,
+		tombstoned: remote.kind === "tombstone",
+	};
+
+	if (input.resolution === "keep-local") {
+		const revision = decimalBigInt(BigInt(selected.record.revision) + 1n);
+		const local = localItem(input.document, input.recordId);
+		const encrypted = local
+			? await input.vault.encryptLoginForSync(local, revision)
+			: await input.vault.encryptTombstoneForSync(
+					input.recordId,
+					new Date().toISOString(),
+					revision,
+				);
+		nextMetadata.outbox.push({
+			mutation: {
+				mutationId: crypto.randomUUID(),
+				baseRevision: selected.record.revision,
+				record: encrypted,
+			},
+			localUpdatedAt: local?.updatedAt ?? null,
+		});
+		await input.store.save(input.ownerUserId, nextMetadata);
+		return {
+			document: input.document,
+			queued: true,
+			conflicts: nextMetadata.conflicts.length,
+		};
+	}
+
+	const nextDocument =
+		remote.kind === "login"
+			? withItem(input.document, remote.item)
+			: withoutItem(input.document, input.recordId, remote.deletedAt);
+	await input.vault.seal(nextDocument);
+	try {
+		await input.store.save(input.ownerUserId, nextMetadata);
+	} catch (cause) {
+		// Cross-storage transactions do not exist. Roll the local envelope back so
+		// a failed IndexedDB commit cannot make the stale outbox authoritative.
+		try {
+			await input.vault.seal(input.document);
+		} catch (rollbackCause) {
+			throw new SyncClientError(
+				"Conflict metadata could not be saved and the local vault rollback failed.",
+				"conflict_rollback_failed",
+				undefined,
+				{ cause, rollbackCause },
+			);
+		}
+		throw cause;
+	}
+	return {
+		document: nextDocument,
+		queued: false,
+		conflicts: nextMetadata.conflicts.length,
+	};
+};
+
 const pullRemote = async (
 	vault: UnlockedVault,
 	document: VaultDocument,

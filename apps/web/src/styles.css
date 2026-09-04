@@ -34,6 +34,9 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 .sync-state { padding: 2px 7px; border-radius: 999px; color: #b6bac2; background: #30343b; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
 .sync-state.enabled { color: #b9ffd4; background: #17432a; }
 .sync-caption { color: #92999b; font-size: 11px; line-height: 1.4; }
+.sync-conflict-list, .sync-conflict, .sync-conflict-confirm { display: flex; flex-direction: column; gap: 7px; }
+.sync-conflict-list { margin: 0; padding: 3px 0 0; border-top: 1px solid #27302f; list-style: none; }
+.sync-conflict { padding: 8px; border: 1px solid #553838; border-radius: 8px; background: #1d1516; }
 .nav-account-link { padding: 8px 9px; border-top: 1px solid #1d2425; }
 .account-shell { min-height: 100vh; padding: 48px 24px; background: radial-gradient(circle at 50% 10%, rgba(73,169,131,.1), transparent 30%), #0a0d0f; }
 .account-column { display: flex; width: min(680px,100%); margin: 0 auto; flex-direction: column; gap: 20px; }

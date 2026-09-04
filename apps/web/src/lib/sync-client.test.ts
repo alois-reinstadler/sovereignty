@@ -11,6 +11,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { UnlockedVault, VaultDocument, VaultItem } from "./models";
 import {
 	enableEncryptedSync,
+	inspectSyncConflicts,
+	resolveSyncConflict,
 	SyncClientError,
 	type SyncHttpClient,
 	syncNow,
@@ -279,5 +281,211 @@ describe("encrypted sync client", () => {
 		});
 		expect(cursors).toEqual(["12", "0", "5"]);
 		expect(memory.current()?.cursor).toBe("5");
+	});
+
+	it("inspects a conflict in memory and queues local ciphertext on the remote revision", async () => {
+		const local = { ...item("2026-01-04T00:00:00.000Z"), title: "Local login" };
+		const remote = {
+			...item("2026-01-03T00:00:00.000Z"),
+			title: "Remote login",
+			password: "remote-secret",
+		};
+		const pending: SyncMutationRequest = {
+			mutationId: "018f3d3e-8bb7-7cc8-8e02-3e8cad8d5b75",
+			baseRevision: parseDecimalBigInt("1"),
+			record: record("2", 5),
+		};
+		const memory = memoryStore({
+			version: 1,
+			vaultId: VAULT_ID,
+			cursor: "2",
+			records: {
+				"record-one": {
+					revision: "1",
+					localUpdatedAt: item().updatedAt,
+					tombstoned: false,
+				},
+			},
+			outbox: [{ mutation: pending, localUpdatedAt: local.updatedAt }],
+			conflicts: [
+				{ record: record("2", 9), detectedAt: "2026-01-05T00:00:00.000Z" },
+			],
+		});
+		const vault = fakeVault(document([local]));
+		vi.mocked(vault.decryptSyncRecord).mockResolvedValue({
+			schemaVersion: 1,
+			kind: "login",
+			item: remote,
+		});
+		const summaries = await inspectSyncConflicts({
+			ownerUserId: USER_ID,
+			vault,
+			document: document([local]),
+			store: memory.store,
+		});
+		expect(summaries).toEqual([
+			expect.objectContaining({
+				localLabel: "Local login",
+				remoteLabel: "Remote login",
+				remoteRevision: "2",
+			}),
+		]);
+
+		const result = await resolveSyncConflict({
+			ownerUserId: USER_ID,
+			vault,
+			document: document([local]),
+			recordId: "record-one",
+			remoteRevision: "2",
+			resolution: "keep-local",
+			store: memory.store,
+		});
+		expect(result.document.items).toEqual([local]);
+		expect(result.queued).toBe(true);
+		expect(vault.seal).not.toHaveBeenCalled();
+		expect(memory.current()?.conflicts).toHaveLength(0);
+		expect(memory.current()?.outbox).toHaveLength(1);
+		expect(memory.current()?.outbox[0]?.mutation).toMatchObject({
+			baseRevision: "2",
+			record: { revision: "3", recordId: "record-one" },
+		});
+		expect(JSON.stringify(memory.current())).not.toContain("remote-secret");
+	});
+
+	it("uses the authenticated remote login and removes pending local ciphertext", async () => {
+		const local = { ...item("2026-01-04T00:00:00.000Z"), title: "Local login" };
+		const remote = {
+			...item("2026-01-05T00:00:00.000Z"),
+			title: "Remote login",
+		};
+		const pending: SyncMutationRequest = {
+			mutationId: "018f3d3e-8bb7-7cc8-8e02-3e8cad8d5b75",
+			baseRevision: parseDecimalBigInt("1"),
+			record: record("2", 5),
+		};
+		const memory = memoryStore({
+			version: 1,
+			vaultId: VAULT_ID,
+			cursor: "2",
+			records: {},
+			outbox: [{ mutation: pending, localUpdatedAt: local.updatedAt }],
+			conflicts: [
+				{ record: record("2", 9), detectedAt: "2026-01-05T00:00:00.000Z" },
+			],
+		});
+		const vault = fakeVault(document([local]));
+		vi.mocked(vault.decryptSyncRecord).mockResolvedValue({
+			schemaVersion: 1,
+			kind: "login",
+			item: remote,
+		});
+		const result = await resolveSyncConflict({
+			ownerUserId: USER_ID,
+			vault,
+			document: document([local]),
+			recordId: "record-one",
+			remoteRevision: "2",
+			resolution: "use-remote",
+			store: memory.store,
+		});
+		expect(result.document.items).toEqual([remote]);
+		expect(result.queued).toBe(false);
+		expect(vault.seal).toHaveBeenCalledWith(result.document);
+		expect(memory.current()?.outbox).toHaveLength(0);
+		expect(memory.current()?.conflicts).toHaveLength(0);
+		expect(memory.current()?.records["record-one"]).toEqual({
+			revision: "2",
+			localUpdatedAt: remote.updatedAt,
+			tombstoned: false,
+		});
+	});
+
+	it("accepts an authenticated remote tombstone only after sealing the deletion", async () => {
+		const local = { ...item(), title: "Delete me" };
+		const memory = memoryStore({
+			version: 1,
+			vaultId: VAULT_ID,
+			cursor: "2",
+			records: {},
+			outbox: [],
+			conflicts: [
+				{ record: record("2", 10), detectedAt: "2026-01-05T00:00:00.000Z" },
+			],
+		});
+		const vault = fakeVault(document([local]));
+		vi.mocked(vault.decryptSyncRecord).mockResolvedValue({
+			schemaVersion: 1,
+			kind: "tombstone",
+			deletedAt: "2026-01-06T00:00:00.000Z",
+		});
+		const summary = await inspectSyncConflicts({
+			ownerUserId: USER_ID,
+			vault,
+			document: document([local]),
+			store: memory.store,
+		});
+		expect(summary[0]).toMatchObject({
+			localLabel: "Delete me",
+			remoteKind: "tombstone",
+			remoteLabel: "Deleted on another device",
+		});
+		const result = await resolveSyncConflict({
+			ownerUserId: USER_ID,
+			vault,
+			document: document([local]),
+			recordId: "record-one",
+			remoteRevision: "2",
+			resolution: "use-remote",
+			store: memory.store,
+		});
+		expect(result.document.items).toEqual([]);
+		expect(result.document.updatedAt).toBe("2026-01-06T00:00:00.000Z");
+		expect(memory.current()?.records["record-one"]?.tombstoned).toBe(true);
+		expect(vi.mocked(vault.seal).mock.invocationCallOrder[0]).toBeLessThan(
+			vi.mocked(memory.store.save).mock.invocationCallOrder[0] ?? 0,
+		);
+	});
+
+	it("rolls the local vault back when remote resolution metadata cannot commit", async () => {
+		const localDocument = document([
+			{ ...item(), title: "Preserved local login" },
+		]);
+		const initial: SyncMetadata = {
+			version: 1,
+			vaultId: VAULT_ID,
+			cursor: "2",
+			records: {},
+			outbox: [],
+			conflicts: [
+				{ record: record("2", 11), detectedAt: "2026-01-05T00:00:00.000Z" },
+			],
+		};
+		const store: SyncMetadataStore = {
+			load: vi.fn(async () => initial),
+			save: vi.fn(async () => {
+				throw new Error("IndexedDB commit failed");
+			}),
+			remove: vi.fn(async () => undefined),
+		};
+		const vault = fakeVault(localDocument);
+		vi.mocked(vault.decryptSyncRecord).mockResolvedValue({
+			schemaVersion: 1,
+			kind: "login",
+			item: { ...item("2026-01-06T00:00:00.000Z"), title: "Remote login" },
+		});
+		await expect(
+			resolveSyncConflict({
+				ownerUserId: USER_ID,
+				vault,
+				document: localDocument,
+				recordId: "record-one",
+				remoteRevision: "2",
+				resolution: "use-remote",
+				store,
+			}),
+		).rejects.toThrow("IndexedDB commit failed");
+		expect(vault.seal).toHaveBeenCalledTimes(2);
+		expect(vault.seal).toHaveBeenLastCalledWith(localDocument);
+		expect(initial.conflicts).toHaveLength(1);
 	});
 });
