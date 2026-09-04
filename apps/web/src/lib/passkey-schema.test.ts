@@ -6,7 +6,7 @@ describe("passkey database migration", () => {
 	it("contains every Better Auth passkey field and cascades account deletion", async () => {
 		const migration = await readFile(
 			fileURLToPath(
-				new URL("../../migrations/003_passkeys.sql", import.meta.url),
+			new URL("../../migrations/004_passkeys.sql", import.meta.url),
 			),
 			"utf8",
 		);
