@@ -114,6 +114,21 @@ password recovery must remain disabled until an operator explicitly configures
 a self-hosted or chosen mail service and the product communicates that account
 recovery does not decrypt a vault.
 
+## First account and signup policy
+
+Production signup defaults to `closed`; existing accounts can still sign in.
+For the first account, set `SIGNUP_MODE=invite-only` and configure one short-lived,
+email-bound invitation in `SIGNUP_INVITATIONS`. Deliver its random code privately,
+register through the account screen, then remove the invitation and return to
+closed mode. Restart the application after policy changes. The Compose application
+passes both settings through without exposing them to the client bundle.
+
+See [SIGNUP_POLICY.md](./SIGNUP_POLICY.md) for exact invitation hashing, expiration,
+limits, and the distinction between invitation possession and mailbox ownership.
+An invitation is not transactionally consumed; remove it before deleting or
+changing the invited account's email. `SIGNUP_MODE=open` explicitly allows public
+registration and should be an intentional operator choice.
+
 ## Encrypted sync API
 
 The same-origin API exposes `GET /api/sync/v2/changes` and
@@ -135,3 +150,9 @@ mocked PostgreSQL interfaces. Docker and PostgreSQL are unavailable in the
 current development environment, so image construction, schema application,
 concurrent transaction testing, and a backup/restore drill remain required
 integration checks on a Docker-capable host.
+
+The opt-in [PostgreSQL integration harness](./POSTGRES_INTEGRATION.md) now exercises
+real migrations, owner isolation, idempotent mutations, rollback, and concurrent
+writers in a disposable Compose database. Run `pnpm test:postgres` on a
+Docker-capable host. Its database cases are skipped in the ordinary suite and
+must not be counted as successful integration verification here.
