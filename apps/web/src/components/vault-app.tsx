@@ -402,25 +402,29 @@ function VaultView({ accountUserId }: { accountUserId: string | null }) {
 		if (lockingRef.current) return;
 		const ticket = lockQueue.current.ticket();
 		const issuingSession = sessionRef.current;
+		const isLive = () =>
+			!lockingRef.current &&
+			Boolean(issuingSession) &&
+			sessionRef.current === issuingSession &&
+			lockQueue.current.current(ticket);
 		try {
 			const result = await copyForLiveSession(
 				value,
 				navigator.clipboard,
-				() =>
-					!lockingRef.current &&
-					Boolean(issuingSession) &&
-					sessionRef.current === issuingSession &&
-					lockQueue.current.current(ticket),
+				isLive,
+				() => {
+					const previous = clipboardEntryRef.current;
+					if (previous) window.clearTimeout(previous.timer);
+					const entry: ClipboardEntry = { value, timer: 0 };
+					entry.timer = window.setTimeout(() => {
+						void clearClipboardEntry(entry);
+					}, 30_000);
+					clipboardEntryRef.current = entry;
+				},
 			);
 			if (result === "revoked") return;
 			if (result === "blocked") throw new Error("Clipboard unavailable.");
-			const previous = clipboardEntryRef.current;
-			if (previous) window.clearTimeout(previous.timer);
-			const entry: ClipboardEntry = { value, timer: 0 };
-			entry.timer = window.setTimeout(() => {
-				void clearClipboardEntry(entry);
-			}, 30_000);
-			clipboardEntryRef.current = entry;
+			if (!isLive()) return;
 			setNotice(
 				`${label} copied. Clipboard clearing will be attempted in 30 seconds.`,
 			);

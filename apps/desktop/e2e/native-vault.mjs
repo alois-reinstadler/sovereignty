@@ -120,6 +120,7 @@ async function diagnostics() {
 	return script(`return {
     url: location.href,
     title: document.title,
+		text: document.body.textContent.slice(0, 12_000),
     headings: [...document.querySelectorAll('h1,h2')].map(e => e.textContent),
     buttons: [...document.querySelectorAll('button')].map(e => ({ name: e.getAttribute('aria-label') || e.textContent, disabled: e.disabled })),
     errors: window.__nativeTestErrors || [],
@@ -285,6 +286,7 @@ try {
 	// Only the private display created by xvfb-run; never the shared desktop.
 	await run("scrot", [`${artifacts}/native-failure.png`]).catch(() => {});
 	if (session) {
+		await button("Show Error").catch(() => {});
 		await screenshot("failure").catch(() => {});
 		await writeFile(
 			`${artifacts}/failure.json`,

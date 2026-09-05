@@ -2,6 +2,36 @@ import { describe, expect, it, vi } from "vitest";
 import { copyForLiveSession } from "./clipboard-session";
 
 describe("clipboard session races", () => {
+	it("registers before a queued lock can run between helper and caller continuations", async () => {
+		let live = true;
+		let retained = false;
+		let resolveWrite: () => void = () => {};
+		const write = new Promise<void>((resolve) => {
+			resolveWrite = resolve;
+		});
+		const clipboard = {
+			writeText: vi.fn(() => write),
+			readText: vi.fn(async () => "synthetic"),
+		};
+		const operation = copyForLiveSession(
+			"synthetic",
+			clipboard,
+			() => live,
+			() => {
+				retained = true;
+			},
+		);
+		resolveWrite();
+		queueMicrotask(() => {
+			live = false;
+			// The lock must find the entry before the caller resumes.
+			expect(retained).toBe(true);
+			retained = false;
+		});
+		expect(await operation).toBe("copied");
+		expect(live).toBe(false);
+		expect(retained).toBe(false);
+	});
 	it("does not start copying after revocation", async () => {
 		const clipboard = { writeText: vi.fn(), readText: vi.fn() };
 		expect(await copyForLiveSession("synthetic", clipboard, () => false)).toBe(

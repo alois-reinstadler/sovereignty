@@ -11,12 +11,17 @@ fn authorize_close(label: &str, pending: &AtomicBool) -> bool {
     label == "main" && pending.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst).is_ok()
 }
 
-fn local_navigation(url: &tauri::Url, development: bool) -> bool {
+fn local_navigation(url: &tauri::Url, development: bool, windows: bool) -> bool {
     if !url.username().is_empty() || url.password().is_some() {
         return false;
     }
-    let bundled = (url.scheme() == "tauri" && url.host_str() == Some("localhost") && url.port().is_none())
-        || (url.scheme() == "http" && url.host_str() == Some("tauri.localhost") && url.port().is_none());
+    // Only Windows translates Tauri's bundled scheme to an HTTP shim. On
+    // macOS/Linux, allowing that HTTP URL would permit an ordinary local server.
+    let bundled = if windows {
+        url.scheme() == "http" && url.host_str() == Some("tauri.localhost") && url.port().is_none()
+    } else {
+        url.scheme() == "tauri" && url.host_str() == Some("localhost") && url.port().is_none()
+    };
     let dev = development && url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port() == Some(1420);
     bundled || dev
 }
@@ -41,7 +46,7 @@ pub fn run() {
         .setup(|app| {
             let config = app.config().app.windows.iter().find(|window| window.label == "main").ok_or("Missing main window configuration")?;
             WebviewWindowBuilder::from_config(app, config)?
-                .on_navigation(|url| local_navigation(url, cfg!(dev)))
+                .on_navigation(|url| local_navigation(url, cfg!(dev), cfg!(target_os = "windows")))
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                 .build()?;
             Ok(())
@@ -89,13 +94,15 @@ mod tests {
     }
     #[test]
     fn navigation_is_local_and_exact() {
-        for url in ["tauri://localhost/", "http://tauri.localhost/"] {
-            assert!(local_navigation(&url.parse().unwrap(), false));
-        }
+        assert!(local_navigation(&"tauri://localhost/".parse().unwrap(), false, false));
+        assert!(!local_navigation(&"http://tauri.localhost/".parse().unwrap(), false, false));
+        assert!(local_navigation(&"http://tauri.localhost/".parse().unwrap(), false, true));
+        assert!(!local_navigation(&"tauri://localhost/".parse().unwrap(), false, true));
         for url in ["https://example.com", "http://tauri.localhost.evil.test", "tauri://evil.test", "http://127.0.0.1:1420", "file:///tmp/index.html", "data:text/html,test", "http://user@tauri.localhost", "http://tauri.localhost:8080"] {
-            assert!(!local_navigation(&url.parse().unwrap(), false));
+            assert!(!local_navigation(&url.parse().unwrap(), false, false));
+            assert!(!local_navigation(&url.parse().unwrap(), false, true));
         }
-        assert!(local_navigation(&"http://127.0.0.1:1420/".parse().unwrap(), true));
-        assert!(!local_navigation(&"http://127.0.0.1:1421/".parse().unwrap(), true));
+        assert!(local_navigation(&"http://127.0.0.1:1420/".parse().unwrap(), true, false));
+        assert!(!local_navigation(&"http://127.0.0.1:1421/".parse().unwrap(), true, false));
     }
 }

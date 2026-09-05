@@ -63,8 +63,9 @@ APIs. Development and bundled origins have separate browser storage; use an
 encrypted backup to move a test vault between them. OS secure unlock is not
 configured. Do not claim Keychain or hardware protection for this storage.
 
-Website values remain copyable text. Native navigation permits only bundled
-`tauri://localhost` or `http://tauri.localhost` authorities and the exact loopback
+Website values remain copyable text. Native navigation permits only the platform's
+bundled authority (`tauri://localhost` on macOS/Linux; `http://tauri.localhost` on
+Windows) and the exact loopback
 development origin in Tauri dev builds. New windows are denied. Remote documents,
 external links, lookalikes, embedded credentials, arbitrary ports, `file:` and
 `data:` navigation are refused. There is no opener/shell fallback or remote webview.
