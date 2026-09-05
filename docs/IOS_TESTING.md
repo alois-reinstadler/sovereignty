@@ -48,8 +48,8 @@ three days. Application binaries are excluded. Fixture passwords and keys are
 public synthetic values; they must never be used for a real vault. Native test
 results do not replace an independent security audit.
 
-Both native gates passed on iOS 26.5 at commit `37e5bb3`:
-[run 33983047110](https://github.com/alois-reinstadler/sovereignty/actions/runs/33983047110).
+Both native gates passed on iOS 26.5 at commit `2c04afb`:
+[run 33984215562](https://github.com/alois-reinstadler/sovereignty/actions/runs/33984215562).
 The acceptance entry reported 79 checks with no failures: 78 cryptographic
 compatibility checks and a real native filesystem create/update/restore round-trip.
 It refuses to run storage fixtures in a nonempty vault sandbox and reports
@@ -63,8 +63,8 @@ vault. The separate filesystem inspection required at least four encrypted
 snapshots without fixture plaintext; application logs contained no JavaScript
 exceptions. Screenshots and accessibility attachments were reviewed.
 
-[Full CI run 33983047150](https://github.com/alois-reinstadler/sovereignty/actions/runs/33983047150)
-also passed formatting, TypeScript, 437 ordinary tests, the production web build,
+[Full CI run 33984215523](https://github.com/alois-reinstadler/sovereignty/actions/runs/33984215523)
+also passed formatting, TypeScript, 427 ordinary tests, the production web build,
 generated routes, normal iOS bundle export, existing extension packaging checks,
 the high-severity pnpm audit and 16 separate real PostgreSQL integration checks.
 The audit still reports the moderate tooling advisory documented in

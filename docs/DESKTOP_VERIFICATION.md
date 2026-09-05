@@ -1,6 +1,6 @@
 # Desktop development verification — 2026-09-05
 
-Verified code commit: `f8293e3`. [Native CI run 33983223487](https://github.com/alois-reinstadler/sovereignty/actions/runs/33983223487)
+Verified code commit: `2c04afb`. [Native CI run 33984215509](https://github.com/alois-reinstadler/sovereignty/actions/runs/33984215509)
 passes unsigned, unbundled Linux and macOS compilation and Rust navigation/close
 authorization tests. No application binaries were published.
 
@@ -23,12 +23,15 @@ and preserves a value subsequently replaced by another process. This does not
 establish macOS clipboard behavior; permission failures can still prevent
 best-effort clearing on other operating systems.
 
-[Full CI run 33960851627](https://github.com/alois-reinstadler/sovereignty/actions/runs/33960851627)
-passes formatting, TypeScript, 394 ordinary automated tests, production web build,
-generated routes, existing extension packaging regression checks, dependency audit,
+[Full CI run 33984215523](https://github.com/alois-reinstadler/sovereignty/actions/runs/33984215523)
+passes formatting, TypeScript, 427 ordinary automated tests (including mobile),
+production web build, generated routes, normal iOS bundle export,
+existing extension packaging regression checks, the high-severity dependency audit,
 and the separate 16-test real PostgreSQL integration suite. Ordinary tests skip
 15 opt-in database cases and the explicit vector-regeneration case; PostgreSQL CI
 runs the database cases against disposable real databases.
+The pnpm audit reports one moderate Expo tooling advisory, documented in
+[the mobile boundary](./MOBILE_BOUNDARY.md).
 
 Shared-Chrome verification also exercised the desktop target's create/save,
 generator, favourites, search, lock/reload/unlock and auth-draft revocation flows.
