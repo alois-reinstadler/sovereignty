@@ -97,8 +97,14 @@ async function fill(selector, text) {
 	await command("POST", `/element/${id}/value`, { text });
 }
 async function button(label) {
-	const selector = `button[aria-label="${label}"]`;
-	const id = await element(selector);
+	const found = await script(
+		`return [...document.querySelectorAll('button')].find(e =>
+    e.getBoundingClientRect().height > 0 && !e.disabled &&
+    (e.getAttribute('aria-label') === arguments[0] || e.textContent.trim().endsWith(arguments[0])))`,
+		label,
+	);
+	assert.ok(found, `Visible enabled button: ${label}`);
+	const id = found["element-6066-11e4-a52e-4f735466cecf"];
 	await command("POST", `/element/${id}/click`, {});
 }
 const visible = (selector) =>
