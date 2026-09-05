@@ -1,17 +1,23 @@
 // Drives the compiled Linux WebKit application, never the shared Chrome session.
 // Every credential and storage directory below belongs only to this test.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 
 const artifacts = resolve("apps/desktop/e2e/artifacts");
 await mkdir(artifacts, { recursive: true });
 const storage = await mkdtemp(`${tmpdir()}/sovereignty-native-test-`);
+const run = promisify(execFile);
+// A private Xvfb display and window manager let the test exercise native focus
+// events without interacting with any user's desktop or browser.
+const manager = spawn("openbox", [], { stdio: "ignore" });
+const managerExit = once(manager, "exit");
 async function freePort() {
 	const server = createServer();
 	server.listen(0, "127.0.0.1");
@@ -202,6 +208,12 @@ try {
 		false,
 	);
 	checks.push("locking removed credential UI");
+	const beforeReload = await diagnostics();
+	assert.deepEqual(beforeReload.errors, []);
+	assert.deepEqual(
+		beforeReload.requests.filter((url) => /\/api\/(auth|sync)(\/|$)/.test(url)),
+		[],
+	);
 	await command("POST", "/refresh", {});
 	await until(
 		() => visible('input[name="master-password"]'),
@@ -223,6 +235,30 @@ try {
 		60_000,
 	);
 	checks.push("reload starts locked and master password restores saved login");
+	await script(`window.__nativeBlurObserved = false;
+    addEventListener('svrgn:desktop-lock', e => {
+      if (e.detail === 'native-blur') window.__nativeBlurObserved = true;
+    });`);
+	const { stdout: windowId } = await run("xdotool", ["getactivewindow"]);
+	await run("xdotool", ["windowminimize", windowId.trim()]);
+	await until(
+		() => script("return window.__nativeBlurObserved === true"),
+		"native blur event",
+	);
+	await run("xdotool", ["windowmap", windowId.trim()]);
+	await run("xdotool", ["windowactivate", "--sync", windowId.trim()]);
+	await until(
+		() => visible('input[name="master-password"]'),
+		"native focus loss locks vault",
+	);
+	assert.equal(
+		await script(
+			"return document.body.textContent.includes(arguments[0])",
+			title,
+		),
+		false,
+	);
+	checks.push("actual native window focus loss locks and removes plaintext UI");
 	const details = await diagnostics();
 	assert.deepEqual(details.errors, []);
 	assert.deepEqual(
@@ -230,8 +266,6 @@ try {
 		[],
 	);
 	checks.push("desktop made no unsupported account or sync requests");
-	await button("Lock vault");
-	await until(() => visible('input[name="master-password"]'), "final lock");
 	await writeFile(
 		`${artifacts}/result.json`,
 		JSON.stringify({ checks, details }, null, 2),
@@ -255,5 +289,11 @@ try {
 		await driverExit;
 	}
 	await writeFile(`${artifacts}/driver.log`, driverOutput);
+	manager.kill("SIGTERM");
+	await Promise.race([managerExit, delay(5_000)]);
+	if (manager.exitCode === null && manager.signalCode === null) {
+		manager.kill("SIGKILL");
+		await managerExit;
+	}
 	await rm(storage, { recursive: true, force: true });
 }
