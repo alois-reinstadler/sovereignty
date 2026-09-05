@@ -52,7 +52,7 @@ jobs:
         run: pnpm build
 
       - name: Build and package Chromium extension
-        run: pnpm package:extension
+        run: pnpm --filter @svrgn/extension verify:package
 
       - name: Audit high-severity dependencies
         run: pnpm audit:high

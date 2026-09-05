@@ -17,6 +17,13 @@ pnpm --filter @svrgn/extension package
 
 `--frozen-lockfile` rejects dependency drift; `--filter` selects the workspace package. Build outputs `apps/extension/dist`, ready for **chrome://extensions → Developer mode → Load unpacked**. Select that directory. Rebuild, then use the extension's Reload button after changes. Package also builds and writes `apps/extension/sovereignty-chromium.zip`; Python 3 is required for packaging. The ZIP uses sorted paths, fixed timestamps and permissions, and uncompressed entries for reproducibility independent of compression-library versions. SHA-256 is printed. No store publication occurs.
 
+Every build checks the output manifest's reviewed permission boundary and rejects
+symlinks, source maps, environment files, fixtures, unexpected files, missing entrypoints,
+and nonlocal or inline popup scripts. CI runs
+`pnpm --filter @svrgn/extension verify:package`, rebuilding and packaging twice and
+requiring identical SHA-256 hashes. This verifies reproducibility in that checked
+toolchain; it does not establish a signed release or independent security audit.
+
 ## Pair and fill
 
 1. Pin Sovereignty in the browser toolbar. On a synthetic login page, open its popup.

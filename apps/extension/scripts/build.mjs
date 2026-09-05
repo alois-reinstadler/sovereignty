@@ -1,5 +1,6 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { build } from "vite";
+import { verifyBuild } from "./verify-build.mjs";
 
 await build({
 	configFile: false,
@@ -25,3 +26,7 @@ for (const entry of ["background", "content"])
 	});
 await mkdir("dist", { recursive: true });
 await copyFile("manifest.json", "dist/manifest.json");
+const files = await verifyBuild("dist");
+console.log(
+	`Verified ${files.length} extension artifact files and permission boundary.`,
+);

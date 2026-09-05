@@ -7,9 +7,10 @@
 	"scripts": {
 		"build": "node scripts/build.mjs",
 		"package": "pnpm build && python3 scripts/package.py",
-		"test": "vitest run",
+		"test": "vitest run src && node --test scripts/verify-build.test.mjs",
+		"verify:package": "node scripts/reproducible.mjs",
 		"typecheck": "tsc --noEmit",
-		"check": "biome check src fixtures scripts/build.mjs manifest.json package.json tsconfig.json"
+		"check": "biome check src fixtures scripts/*.mjs manifest.json package.json tsconfig.json"
 	},
 	"dependencies": {
 		"@astryxdesign/core": "0.5.2",
