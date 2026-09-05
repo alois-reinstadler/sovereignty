@@ -140,6 +140,28 @@ cancel the dialog and close again. Focus-loss locking remains active, so perform
 imports from the locked screen. No permission to read arbitrary paths, overwrite
 user files, or persist plaintext has been added.
 
+## Native dependency release gates
+
+A clean `pnpm audit --audit-level high` result describes JavaScript dependencies;
+it is not a Rust dependency audit or a claim that the native stack is advisory-free.
+The [2026-09-05 native audit snapshot](NATIVE_AUDIT.md) records an actual
+`cargo-audit 0.22.2` run: zero vulnerability-category findings, sixteen unmaintained
+warnings and one unsoundness warning. The strict `--deny warnings` check exits 1.
+The current Linux Tauri/GTK3 dependency graph includes these upstream limitations:
+
+- `glib 0.18.5`: [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)
+  reports unsound iterator implementations in `VariantStrIter`. The fix requires
+  glib 0.20 or newer, outside this GTK3 stack's compatible dependency series.
+  Sovereignty does not directly use `VariantStrIter`; that does not establish
+  that all transitive native paths are unaffected.
+- `gtk 0.18.2`: [RUSTSEC-2024-0415](https://rustsec.org/advisories/RUSTSEC-2024-0415.html)
+  records that the GTK3 Rust bindings are unmaintained, with no patched version.
+
+These are upstream release gates requiring a compatible maintained native stack
+and independent review before production claims. This increment does not vendor
+patches, suppress advisory IDs or force an incompatible GTK migration. Native
+compilation and successful synthetic WebKit tests do not remove these limitations.
+
 ## Verification and next milestones
 
 Shared-client tests cover desktop/web session isolation, events and cleanup,
@@ -147,8 +169,9 @@ queued closure, late unlock refusal, auth draft revocation and clipboard races.
 Existing crypto adapter tests cover write ordering and closing after successful
 and failed saves. Rust tests cover exact navigation and single-use close approval.
 
-This container lacks Rust/native WebKit prerequisites. The implementation agent
-verified JavaScript tests, typing, formatting and desktop static assets locally.
+Native WebKit prerequisites are unavailable in the development container. The
+implementation agent verified JavaScript tests, typing, formatting, desktop
+static assets and the Rust dependency audit locally using an isolated toolchain.
 Unsigned Linux/macOS builds and real Linux WebKit checks run separately in CI;
 consult their results for the exact tested commit. Do not infer native runtime
 verification from `info` or a Chrome preview. macOS needs runtime review in addition
