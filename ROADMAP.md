@@ -4,7 +4,10 @@ The phases are ordered around complete user journeys rather than isolated
 feature lists. Each phase must retain backwards-compatible, versioned encrypted
 data or include a tested migration.
 
-## Phase 0 — Local vault milestone
+Phases 0 and 1 are implemented as a development preview. Production readiness
+still depends on the security and operational work in Phase 6.
+
+## Phase 0 — Local vault milestone (implemented)
 
 Deliver the core loop in web and desktop: create, unlock, browse, search, add,
 edit, generate, copy, delete, lock, reload, and unlock again. Persist only a
@@ -12,20 +15,22 @@ versioned encrypted envelope. Establish automated crypto and domain tests.
 
 This phase is a development preview and is not suitable for real secrets.
 
-## Phase 1 — Self-hosted encrypted sync
+## Phase 1 — Self-hosted encrypted sync (development preview)
 
 Add a deployable server and PostgreSQL configuration. The server authenticates
 accounts and devices, stores opaque encrypted records, enforces revisions, and
 supports incremental sync and conflict handling without receiving vault keys.
 Include Docker Compose, health checks, migrations, backups, restore testing,
-rate limiting, and an operator guide.
+rate limiting, and an operator guide. The application paths are implemented;
+live Docker/PostgreSQL concurrency and disaster-recovery drills remain release
+readiness work.
 
 ## Phase 2 — Browser extension and migration
 
 Build WebExtension clients for Chromium and Firefox with safe URL matching,
 autofill, save/update prompts, password generation, and communication with the
-vault. Add imports for common password managers and browsers, duplicate review,
-and an encrypted export/recovery workflow.
+vault. Expand the implemented Chrome CSV importer to other password managers
+and browsers while retaining duplicate review and encrypted backup workflows.
 
 ## Phase 3 — Desktop convenience
 

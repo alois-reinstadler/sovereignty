@@ -3,9 +3,10 @@
 This deployment foundation runs the TanStack Start server and PostgreSQL on
 infrastructure you control. It exposes account authentication, a database-aware
 health check, and authenticated protocol-v2 routes for opaque encrypted records.
-Vault creation/key-envelope provisioning and client-side synchronization are
-still separate unfinished milestones, so this is not a production password-
-manager release.
+The web client can provision an encrypted vault key envelope, queue encrypted
+offline changes, synchronize records, restore a new browser, and resolve conflicts
+without sending plaintext vault contents to the server. This remains a development
+preview rather than a production password-manager release.
 
 ## Security boundary
 

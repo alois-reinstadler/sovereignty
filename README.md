@@ -1,8 +1,9 @@
 # Sovereignty
 
 Sovereignty is an open-source, self-hostable password manager in active development.
-The first milestone is a local encrypted vault shared by a TanStack Start web app
-and a Tauri desktop shell.
+The current milestone combines a local encrypted vault with optional authenticated,
+end-to-end encrypted synchronization in a TanStack Start web app. A Tauri desktop
+shell is included for the later native-client milestone.
 
 > **Development preview:** Do not store real credentials yet. The cryptographic
 > design and implementation have not received an independent security audit.
@@ -13,14 +14,18 @@ and a Tauri desktop shell.
 - Create, edit, search, favourite, and delete login items
 - Generate passwords, reveal fields, and copy with best-effort clipboard clearing
 - Manual and inactivity-based locking
+- Import Chrome password CSV files locally, with duplicate review
+- Export and restore encrypted Sovereignty backups
+- Create accounts with Better Auth and manage passkeys
+- Explicitly enable encrypted synchronization per device
+- Queue encrypted offline changes, restore another device, and resolve conflicts
+- Self-host the application and PostgreSQL with Docker Compose
 - TanStack Start web application using Astryx
 - Tauri 2 desktop packaging scaffold
-- Better Auth account/session foundation with PostgreSQL migrations
-- Docker Compose foundation for a self-hosted web deployment
 
-Encrypted sync routes, recovery, sharing, browser autofill, imports, and mobile
-apps are not part of this milestone. See [ROADMAP.md](./ROADMAP.md). The current
-deployment boundary and operator instructions are in
+Browser autofill, account or vault recovery, sharing, audited production releases,
+and mobile apps are not part of this milestone. See [ROADMAP.md](./ROADMAP.md).
+The deployment boundary and operator instructions are in
 [docs/SELF_HOSTING.md](./docs/SELF_HOSTING.md).
 
 ## Development
@@ -59,5 +64,5 @@ installing Rust and the platform dependencies listed in
 
 ## License
 
-The project license is not selected yet. Choose one before accepting external
-contributions or publishing releases.
+Sovereignty is licensed under the GNU Affero General Public License v3.0. See
+[LICENSE](./LICENSE).
