@@ -48,7 +48,9 @@ jobs:
         run: pnpm --filter @svrgn/mobile exec expo prebuild --platform ios --no-install
       - name: Install CocoaPods dependencies
         working-directory: apps/mobile/ios
-        run: pod install
+        run: |
+          cp ../native/Podfile.lock Podfile.lock
+          pod install --deployment
       - name: Build unsigned simulator test entry
         env:
           ENTRY_FILE: ${{ github.workspace }}/apps/mobile/index.native-test.ts

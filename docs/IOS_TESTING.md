@@ -6,10 +6,11 @@ pnpm dependencies. It does not enroll an Apple account, use EAS, sign a device
 binary, publish an application artifact, or submit to a store.
 
 Expo prebuild generates the iOS project with `--platform ios`; `--no-install`
-keeps dependency installation explicit. CocoaPods then resolves the native
-dependencies. The first successful native run supplies a lockfile for subsequent
-dependency pinning; until that lockfile is committed, native resolution is not
-fully reproducible.
+keeps dependency installation explicit. CI copies the committed
+`apps/mobile/native/Podfile.lock` into the generated project and runs CocoaPods
+with `--deployment`, which refuses dependency changes. That lockfile came from
+the first successful simulator run. Native updates require reviewing both pnpm
+and CocoaPods resolution and rerunning the native gates.
 
 The workflow builds the separate `index.native-test.ts` entry with the Release
 configuration and simulator SDK. `ENTRY_FILE` selects only that test entry;
@@ -38,3 +39,8 @@ CI retains test reports, screenshots, build logs and the CocoaPods lockfile for
 three days. Application binaries are excluded. Fixture passwords and keys are
 public synthetic values; they must never be used for a real vault. Native test
 results do not replace an independent security audit.
+
+The initial crypto gate passed on iOS 26.5 at commit `81f9bd4`:
+[run 33960127794](https://github.com/alois-reinstadler/sovereignty/actions/runs/33960127794).
+It reported 78 checks with no failures. This result verifies the native adapter;
+the normal application UI gate is tracked separately in the following increment.
