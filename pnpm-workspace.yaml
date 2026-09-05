@@ -4,6 +4,11 @@ packages:
 
 allowBuilds:
   '@astryxdesign/core': true
+  esbuild: true
+  react-native-libsodium: true
 
 minimumReleaseAgeExclude:
   - srvx@1.0.0
+
+patchedDependencies:
+  react-native-libsodium@1.7.0: patches/react-native-libsodium@1.7.0.patch

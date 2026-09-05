@@ -1,0 +1,31 @@
+{
+	"name": "@svrgn/mobile",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"main": "index.ts",
+	"packageManager": "pnpm@11.24.0",
+	"scripts": {
+		"check": "biome check .",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"build": "expo export --platform ios",
+		"config": "expo config --type public"
+	},
+	"dependencies": {
+		"@svrgn/protocol-vectors": "workspace:*",
+		"@svrgn/vault-core": "workspace:*",
+		"expo": "57.0.20",
+		"expo-file-system": "57.0.6",
+		"react": "19.2.3",
+		"react-dom": "19.2.3",
+		"react-native": "0.86.3",
+		"react-native-libsodium": "1.7.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.4.6",
+		"@types/react": "19.2.14",
+		"typescript": "6.0.3",
+		"vitest": "4.1.11"
+	}
+}

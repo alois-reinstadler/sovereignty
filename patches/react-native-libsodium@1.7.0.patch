@@ -1,0 +1,254 @@
+diff --git a/cpp/react-native-libsodium.cpp b/cpp/react-native-libsodium.cpp
+index a97e74b23936377c8279bf99defe4389d8e0ff8e..f20c18c18d2cf08df0e770b857625a06342b6d73 100644
+--- a/cpp/react-native-libsodium.cpp
++++ b/cpp/react-native-libsodium.cpp
+@@ -4,6 +4,7 @@
+ #include <string>
+ #include <utility>
+ #include <vector>
++#include <cmath>
+ #include "jsi/jsilib.h"
+ #include "jsi/jsi.h"
+ 
+@@ -11,6 +12,15 @@ namespace ReactNativeLibsodium
+ {
+     namespace jsi = facebook::jsi;
+ 
++    // Wipe temporary secrets even when copying the result into JSI throws.
++    struct WipeVector {
++        std::vector<uint8_t> &bytes;
++        explicit WipeVector(std::vector<uint8_t> &value) : bytes(value) {}
++        ~WipeVector() { if (!bytes.empty()) sodium_memzero(bytes.data(), bytes.size()); }
++        WipeVector(const WipeVector &) = delete;
++        WipeVector &operator=(const WipeVector &) = delete;
++    };
++
+     enum class JsiArgType
+     {
+         string,
+@@ -185,6 +195,19 @@ namespace ReactNativeLibsodium
+ 
+     void installLibsodium(jsi::Runtime &jsiRuntime)
+     {
++        auto zero = jsi::Function::createFromHostFunction(
++            jsiRuntime, jsi::PropNameID::forUtf8(jsiRuntime, "jsi_sodium_memzero"), 3,
++            [](jsi::Runtime &runtime, const jsi::Value &, const jsi::Value *args, size_t count) -> jsi::Value {
++                if (count != 3 || !args[0].isObject() || !args[0].asObject(runtime).isArrayBuffer(runtime) || !args[1].isNumber() || !args[2].isNumber())
++                    throw jsi::JSError(runtime, "Invalid memzero arguments");
++                auto buffer = args[0].asObject(runtime).getArrayBuffer(runtime);
++                const double offset = args[1].asNumber(), length = args[2].asNumber();
++                if (!std::isfinite(offset) || !std::isfinite(length) || offset < 0 || length < 0 || std::floor(offset) != offset || std::floor(length) != length || offset > buffer.size(runtime) || length > buffer.size(runtime) - offset)
++                    throw jsi::JSError(runtime, "Invalid memzero bounds");
++                if (length > 0) sodium_memzero(buffer.data(runtime) + static_cast<size_t>(offset), static_cast<size_t>(length));
++                return jsi::Value::undefined();
++            });
++        jsiRuntime.global().setProperty(jsiRuntime, "jsi_sodium_memzero", std::move(zero));
+         jsiRuntime.global().setProperty(jsiRuntime, "jsi_crypto_secretbox_KEYBYTES", static_cast<int>(crypto_secretbox_KEYBYTES));
+         jsiRuntime.global().setProperty(jsiRuntime, "jsi_crypto_secretbox_NONCEBYTES", static_cast<int>(crypto_secretbox_NONCEBYTES));
+         jsiRuntime.global().setProperty(jsiRuntime, "jsi_crypto_pwhash_SALTBYTES", static_cast<int>(crypto_pwhash_SALTBYTES));
+@@ -1161,6 +1184,7 @@ namespace ReactNativeLibsodium
+                 int memLimit = arguments[memLimitArgumentPosition].asNumber();
+                 int algorithm = arguments[algorithmArgumentPosition].asNumber();
+                 std::vector<uint8_t> key(keyLength);
++                WipeVector wipeKey(key);
+ 
+                 int result = -1;
+                 if (passwordArgType == JsiArgType::string)
+@@ -1295,7 +1319,7 @@ namespace ReactNativeLibsodium
+ 
+                 std::string additionalDataArgumentName = "additionalData";
+                 unsigned int additionalDataArgumentPosition = 1;
+-                validateIsString(functionName, runtime, arguments[additionalDataArgumentPosition], additionalDataArgumentName, true);
++                validateIsStringOrArrayBuffer(functionName, runtime, arguments[additionalDataArgumentPosition], additionalDataArgumentName, true);
+ 
+                 std::string publicNonceArgumentName = "public_nonce";
+                 unsigned int publicNonceArgumentPosition = 2;
+@@ -1305,7 +1329,14 @@ namespace ReactNativeLibsodium
+                 unsigned int keyArgumentPosition = 3;
+                 validateIsArrayBuffer(functionName, runtime, arguments[keyArgumentPosition], keyArgumentName, true);
+ 
+-                std::string additionalData = arguments[additionalDataArgumentPosition].asString(runtime).utf8(runtime);
++                std::vector<uint8_t> additionalData;
++                if (arguments[additionalDataArgumentPosition].isString()) {
++                    auto text = arguments[additionalDataArgumentPosition].asString(runtime).utf8(runtime);
++                    additionalData.assign(text.begin(), text.end());
++                } else {
++                    auto bytes = arguments[additionalDataArgumentPosition].asObject(runtime).getArrayBuffer(runtime);
++                    if (bytes.size(runtime) > 0) additionalData.assign(bytes.data(runtime), bytes.data(runtime) + bytes.size(runtime));
++                }
+                 auto publicNonceArrayBuffer =
+                     arguments[publicNonceArgumentPosition].asObject(runtime).getArrayBuffer(runtime);
+                 auto keyArrayBuffer =
+@@ -1334,7 +1365,7 @@ namespace ReactNativeLibsodium
+                         reinterpret_cast<const unsigned char *>(messageString.data()),
+                         messageString.length(),
+                         reinterpret_cast<const unsigned char *>(additionalData.data()),
+-                        additionalData.length(),
++                        additionalData.size(),
+                         NULL,
+                         publicNonceArrayBuffer.data(runtime),
+                         keyArrayBuffer.data(runtime));
+@@ -1351,7 +1382,7 @@ namespace ReactNativeLibsodium
+                         messageArrayBuffer.data(runtime),
+                         messageArrayBuffer.length(runtime),
+                         reinterpret_cast<const unsigned char *>(additionalData.data()),
+-                        additionalData.length(),
++                        additionalData.size(),
+                         NULL,
+                         publicNonceArrayBuffer.data(runtime),
+                         keyArrayBuffer.data(runtime));
+@@ -1377,7 +1408,7 @@ namespace ReactNativeLibsodium
+ 
+                 std::string additionalDataArgumentName = "additionalData";
+                 unsigned int additionalDataArgumentPosition = 1;
+-                validateIsString(functionName, runtime, arguments[additionalDataArgumentPosition], additionalDataArgumentName, true);
++                validateIsStringOrArrayBuffer(functionName, runtime, arguments[additionalDataArgumentPosition], additionalDataArgumentName, true);
+ 
+                 std::string publicNonceArgumentName = "public_nonce";
+                 unsigned int publicNonceArgumentPosition = 2;
+@@ -1387,7 +1418,14 @@ namespace ReactNativeLibsodium
+                 unsigned int keyArgumentPosition = 3;
+                 validateIsArrayBuffer(functionName, runtime, arguments[keyArgumentPosition], keyArgumentName, true);
+ 
+-                std::string additionalData = arguments[additionalDataArgumentPosition].asString(runtime).utf8(runtime);
++                std::vector<uint8_t> additionalData;
++                if (arguments[additionalDataArgumentPosition].isString()) {
++                    auto text = arguments[additionalDataArgumentPosition].asString(runtime).utf8(runtime);
++                    additionalData.assign(text.begin(), text.end());
++                } else {
++                    auto bytes = arguments[additionalDataArgumentPosition].asObject(runtime).getArrayBuffer(runtime);
++                    if (bytes.size(runtime) > 0) additionalData.assign(bytes.data(runtime), bytes.data(runtime) + bytes.size(runtime));
++                }
+                 auto publicNonceArrayBuffer =
+                     arguments[publicNonceArgumentPosition].asObject(runtime).getArrayBuffer(runtime);
+                 auto keyArrayBuffer =
+@@ -1403,11 +1441,14 @@ namespace ReactNativeLibsodium
+                 }
+ 
+                 std::vector<uint8_t> message;
++                WipeVector wipeMessage(message);
+ 
+                 int result = -1;
+                 if (ciphertextArgType == JsiArgType::string)
+                 {
+                     std::string ciphertextString = arguments[ciphertextArgumentPosition].asString(runtime).utf8(runtime);
++                    if (ciphertextString.length() < crypto_aead_xchacha20poly1305_ietf_ABYTES)
++                        throw jsi::JSError(runtime, "Ciphertext shorter than authentication tag");
+                     unsigned long long messageLength = ciphertextString.length() - crypto_aead_xchacha20poly1305_ietf_ABYTES;
+                     message.resize(messageLength);
+                     result = crypto_aead_xchacha20poly1305_ietf_decrypt(
+@@ -1417,7 +1458,7 @@ namespace ReactNativeLibsodium
+                         reinterpret_cast<const unsigned char *>(ciphertextString.data()),
+                         ciphertextString.length(),
+                         reinterpret_cast<const unsigned char *>(additionalData.data()),
+-                        additionalData.length(),
++                        additionalData.size(),
+                         publicNonceArrayBuffer.data(runtime),
+                         keyArrayBuffer.data(runtime));
+                 }
+@@ -1425,6 +1466,8 @@ namespace ReactNativeLibsodium
+                 {
+                     auto ciphertextArrayBuffer =
+                         arguments[ciphertextArgumentPosition].asObject(runtime).getArrayBuffer(runtime);
++                    if (ciphertextArrayBuffer.length(runtime) < crypto_aead_xchacha20poly1305_ietf_ABYTES)
++                        throw jsi::JSError(runtime, "Ciphertext shorter than authentication tag");
+                     unsigned long long messageLength = ciphertextArrayBuffer.length(runtime) - crypto_aead_xchacha20poly1305_ietf_ABYTES;
+                     message.resize(messageLength);
+                     result = crypto_aead_xchacha20poly1305_ietf_decrypt(
+@@ -1434,7 +1477,7 @@ namespace ReactNativeLibsodium
+                         ciphertextArrayBuffer.data(runtime),
+                         ciphertextArrayBuffer.length(runtime),
+                         reinterpret_cast<const unsigned char *>(additionalData.data()),
+-                        additionalData.length(),
++                        additionalData.size(),
+                         publicNonceArrayBuffer.data(runtime),
+                         keyArrayBuffer.data(runtime));
+                 }
+diff --git a/src/lib.native.ts b/src/lib.native.ts
+index bfa7ea8ba73ed71b544b5c6de90296e4b9055321..fc8c02591e3b367cd5e4e9555dc3e7355cb5a29e 100644
+--- a/src/lib.native.ts
++++ b/src/lib.native.ts
+@@ -34,6 +34,7 @@ if (Libsodium && typeof Libsodium.install === 'function') {
+ }
+ 
+ declare global {
++  function jsi_sodium_memzero(buffer: ArrayBuffer, offset: number, length: number): void;
+   var jsi_crypto_auth_BYTES: number;
+   var jsi_crypto_auth_KEYBYTES: number;
+   var jsi_crypto_secretbox_KEYBYTES: number;
+@@ -168,19 +169,19 @@ declare global {
+   ): ArrayBuffer;
+   function jsi_crypto_aead_xchacha20poly1305_ietf_encrypt(
+     message: string | ArrayBuffer,
+-    additionalData: string,
++    additionalData: string | ArrayBuffer,
+     public_nonce: ArrayBuffer,
+     key: ArrayBuffer
+   ): ArrayBuffer;
+   function jsi_crypto_aead_xchacha20poly1305_ietf_decrypt(
+     ciphertext: string | ArrayBuffer,
+-    additionalData: string,
++    additionalData: string | ArrayBuffer,
+     public_nonce: ArrayBuffer,
+     key: ArrayBuffer
+   ): ArrayBuffer;
+   function jsi_crypto_aead_xchacha20poly1305_ietf_decrypt(
+     ciphertext: string | ArrayBuffer,
+-    additionalData: string,
++    additionalData: string | ArrayBuffer,
+     public_nonce: ArrayBuffer,
+     key: ArrayBuffer
+   ): ArrayBuffer;
+@@ -195,6 +196,14 @@ declare global {
+   ): ArrayBuffer;
+ }
+ 
++// Unlike toArrayBuffer, zeroization must never copy a subarray.
++export function memzero(bytes: Uint8Array): void {
++  if (!(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer)) {
++    throw new TypeError('memzero requires an owned Uint8Array');
++  }
++  global.jsi_sodium_memzero(bytes.buffer, bytes.byteOffset, bytes.byteLength);
++}
++
+ export const crypto_auth_BYTES = global.jsi_crypto_auth_BYTES;
+ export const crypto_auth_KEYBYTES = global.jsi_crypto_auth_KEYBYTES;
+ export const crypto_secretbox_KEYBYTES = global.jsi_crypto_secretbox_KEYBYTES;
+@@ -786,14 +795,11 @@ export function crypto_aead_xchacha20poly1305_ietf_encrypt(
+   let result: ArrayBuffer;
+   const messageParam =
+     typeof message === 'string' ? message : toArrayBuffer(message);
+-  if (typeof additional_data !== 'string') {
+-    throw new Error(
+-      'crypto_aead_xchacha20poly1305_ietf_encrypt: input type not yet implemented'
+-    );
+-  }
++  const aad = additional_data === null ? new ArrayBuffer(0) :
++    typeof additional_data === 'string' ? additional_data : toArrayBuffer(additional_data);
+   result = global.jsi_crypto_aead_xchacha20poly1305_ietf_encrypt(
+     messageParam,
+-    additional_data,
++    aad,
+     toArrayBuffer(public_nonce),
+     toArrayBuffer(key)
+   );
+@@ -830,16 +836,13 @@ export function crypto_aead_xchacha20poly1305_ietf_decrypt(
+       'crypto_aead_xchacha20poly1305_ietf_decrypt: input type not yet implemented'
+     );
+   }
+-  if (typeof additional_data !== 'string') {
+-    throw new Error(
+-      'crypto_aead_xchacha20poly1305_ietf_decrypt: input type not yet implemented'
+-    );
+-  }
++  const aad = additional_data === null ? new ArrayBuffer(0) :
++    typeof additional_data === 'string' ? additional_data : toArrayBuffer(additional_data);
+   const ciphertextParam =
+     typeof ciphertext === 'string' ? ciphertext : toArrayBuffer(ciphertext);
+   result = global.jsi_crypto_aead_xchacha20poly1305_ietf_decrypt(
+     ciphertextParam,
+-    additional_data,
++    aad,
+     toArrayBuffer(public_nonce),
+     toArrayBuffer(key)
+   );

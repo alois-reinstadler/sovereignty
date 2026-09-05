@@ -1,0 +1,14 @@
+{
+	"expo": {
+		"name": "Sovereignty",
+		"slug": "sovereignty-mobile",
+		"version": "0.1.0",
+		"orientation": "portrait",
+		"ios": {
+			"bundleIdentifier": "app.svrgn.mobile",
+			"supportsTablet": true,
+			"infoPlist": { "ITSAppUsesNonExemptEncryption": true }
+		},
+		"plugins": ["expo-file-system"]
+	}
+}
