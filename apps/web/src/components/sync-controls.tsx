@@ -1,6 +1,6 @@
 import { Banner, Button, TextInput } from "@astryxdesign/core";
 import { useCallback, useEffect, useState } from "react";
-import { authClient } from "#/lib/auth-client";
+import { getAuthClient } from "#/lib/auth-client";
 import type { UnlockedVault, VaultDocument } from "#/lib/models";
 import {
 	enableEncryptedSync,
@@ -29,7 +29,7 @@ export function SyncControls({
 	onDocument,
 	onWorkingChange,
 }: SyncControlsProps) {
-	const session = authClient.useSession();
+	const session = getAuthClient().useSession();
 	const [metadata, setMetadata] = useState<SyncMetadata | null>(null);
 	const [password, setPassword] = useState("");
 	const [showEnable, setShowEnable] = useState(false);

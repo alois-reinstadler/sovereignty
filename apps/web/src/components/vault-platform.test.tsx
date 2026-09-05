@@ -12,7 +12,7 @@ vi.mock("#/lib/client-platform", () => ({
 	},
 }));
 vi.mock("#/lib/auth-client", () => ({
-	authClient: { useSession: controls.useSession },
+	getAuthClient: () => ({ useSession: controls.useSession }),
 }));
 
 import { VaultApp } from "./vault-app";

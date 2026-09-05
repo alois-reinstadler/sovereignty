@@ -2,7 +2,7 @@ import { Banner, Button, Card, Stack, TextInput } from "@astryxdesign/core";
 import type { Passkey } from "@better-auth/passkey";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
-import { authClient } from "#/lib/auth-client";
+import { getAuthClient } from "#/lib/auth-client";
 import { getPasskeySupport } from "#/lib/passkey-support";
 
 import { Brand } from "./brand";
@@ -33,7 +33,7 @@ function PasskeyManager() {
 		setLoading("list");
 		setError(null);
 		try {
-			const result = await authClient.passkey.listUserPasskeys();
+			const result = await getAuthClient().passkey.listUserPasskeys();
 			if (result.error) {
 				setError(
 					accountFailure(
@@ -62,7 +62,7 @@ function PasskeyManager() {
 		setError(null);
 		setNotice(null);
 		try {
-			const result = await authClient.passkey.addPasskey({
+			const result = await getAuthClient().passkey.addPasskey({
 				name: name.trim() || "My passkey",
 			});
 			if (result.error) {
@@ -91,7 +91,7 @@ function PasskeyManager() {
 		setError(null);
 		setNotice(null);
 		try {
-			const result = await authClient.passkey.deletePasskey({ id });
+			const result = await getAuthClient().passkey.deletePasskey({ id });
 			if (result.error) {
 				setError(
 					accountFailure(
@@ -184,7 +184,7 @@ function PasskeyManager() {
 }
 
 export function AccountScreen() {
-	const session = authClient.useSession();
+	const session = getAuthClient().useSession();
 	const support = getPasskeySupport();
 	const [mode, setMode] = useState<AccountMode>("sign-in");
 	const [name, setName] = useState("");
@@ -209,7 +209,7 @@ export function AccountScreen() {
 		try {
 			const result =
 				mode === "sign-up"
-					? await authClient.signUp.email({
+					? await getAuthClient().signUp.email({
 							email: email.trim(),
 							name: name.trim(),
 							password,
@@ -219,7 +219,10 @@ export function AccountScreen() {
 									: {},
 							},
 						})
-					: await authClient.signIn.email({ email: email.trim(), password });
+					: await getAuthClient().signIn.email({
+							email: email.trim(),
+							password,
+						});
 			if (result.error) {
 				setError(
 					accountFailure(
@@ -247,7 +250,7 @@ export function AccountScreen() {
 		setWorking("passkey");
 		setError(null);
 		try {
-			const result = await authClient.signIn.passkey();
+			const result = await getAuthClient().signIn.passkey();
 			if (result.error) {
 				setError(
 					accountFailure(
@@ -269,7 +272,7 @@ export function AccountScreen() {
 		setWorking("sign-out");
 		setError(null);
 		try {
-			const result = await authClient.signOut();
+			const result = await getAuthClient().signOut();
 			if (result.error) {
 				setError("The account session could not be ended. Try again.");
 				return;

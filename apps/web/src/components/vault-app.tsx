@@ -1,6 +1,6 @@
 import { Button, Card, Icon, Spinner, TextInput } from "@astryxdesign/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { authClient } from "#/lib/auth-client";
+import { getAuthClient } from "#/lib/auth-client";
 import { applyChromeCsvImport } from "#/lib/chrome-csv-import";
 import { IS_DESKTOP } from "#/lib/client-platform";
 import { copyForLiveSession } from "#/lib/clipboard-session";
@@ -54,7 +54,7 @@ export function VaultApp() {
 	return IS_DESKTOP ? <VaultView accountUserId={null} /> : <WebVaultApp />;
 }
 function WebVaultApp() {
-	const accountSession = authClient.useSession();
+	const accountSession = getAuthClient().useSession();
 	return <VaultView accountUserId={accountSession.data?.user.id ?? null} />;
 }
 function VaultView({ accountUserId }: { accountUserId: string | null }) {
