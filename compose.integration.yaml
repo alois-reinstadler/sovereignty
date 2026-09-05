@@ -1,0 +1,40 @@
+# Disposable opt-in fixture. No published ports, host mounts, or persistent data.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${SVRGN_INTEGRATION_DATABASE:?Use the integration runner}
+      POSTGRES_USER: integration
+      # Only this isolated internal network can reach this throwaway database.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U integration -d $$POSTGRES_DB"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    networks: [integration]
+
+  integration:
+    build:
+      context: .
+      dockerfile: apps/web/scripts/Dockerfile.integration
+    environment:
+      SVRGN_INTEGRATION_DATABASE_URL: postgresql://integration@postgres/${SVRGN_INTEGRATION_DATABASE:?Use the integration runner}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [integration]
+    command:
+      - pnpm
+      - --filter
+      - "@svrgn/web"
+      - exec
+      - vitest
+      - run
+      - src/lib/sync-store.server.integration.test.ts
+
+networks:
+  integration:
+    internal: true

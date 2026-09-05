@@ -1,0 +1,8 @@
+FROM node:24-bookworm-slim
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@11.24.0 --activate
+WORKDIR /app
+# The root .dockerignore excludes secrets, build output, and host dependencies.
+COPY . .
+RUN pnpm install --frozen-lockfile
