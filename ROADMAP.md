@@ -4,6 +4,11 @@ The phases are ordered around complete user journeys rather than isolated
 feature lists. Each phase must retain backwards-compatible, versioned encrypted
 data or include a tested migration.
 
+Current development priority: finish self-hosting verification, then desktop/macOS,
+then Expo/iOS. Browser-extension development is paused at the user's request and
+will resume later; its unfinished browser checks do not block the native-client
+work. Sharing and organizations follow these client milestones.
+
 Phases 0 and 1 are implemented as a development preview. Production readiness
 still depends on the security and operational work in Phase 6.
 

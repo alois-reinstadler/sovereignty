@@ -75,5 +75,7 @@ to bootstrap one account. A local encrypted vault can still be used without an
 account or PostgreSQL.
 
 Tests cover policy parsing, expiry, email/proof binding, uniform denials, endpoint
-restrictions, and Better Auth's actual user-creation hook. Live PostgreSQL account
-integration requires a working database and remains a separate verification step.
+restrictions, and Better Auth's actual user-creation hook. The
+[PostgreSQL integration suite](./POSTGRES_INTEGRATION.md) also verifies account
+creation/denial, hashed passwords, secure session cookies, signout, sign-in while
+signup is closed, origin rejection and database-backed throttling in CI.

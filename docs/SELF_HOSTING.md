@@ -30,8 +30,11 @@ model.
 - A DNS name and HTTPS reverse proxy for non-loopback deployments
 - Durable storage and a tested off-host backup destination
 
-Copy `.env.example` to `.env` and fill every blank value. The file is ignored by
-Git. `BETTER_AUTH_URL` must be the exact public origin without a trailing slash.
+Copy `.env.example` to an operator-owned file outside the checkout, for example
+`/etc/sovereignty/compose.env`, and configure it there. Restrict its permissions
+to the deployment operator; never commit populated environment files. The
+commands below select that file explicitly. `BETTER_AUTH_URL` must be the exact
+public origin without a trailing slash.
 `BETTER_AUTH_TRUSTED_ORIGINS` is a comma-separated allowlist of exact origins;
 wildcards and URL paths are rejected at startup.
 
@@ -51,17 +54,18 @@ and password configured for that service.
 ## Start and upgrade
 
 ```bash
-docker compose up --detach --build
+docker compose --env-file /etc/sovereignty/compose.env up --detach --build
 ```
 
-`--detach` keeps the containers running after the command exits, and `--build`
+`--env-file` selects the external operator configuration, `--detach` keeps the
+containers running after the command exits, and `--build`
 rebuilds the application image before starting. Compose waits for PostgreSQL,
 runs each checksum-protected SQL migration once, and only then starts the app.
 
 Check readiness with:
 
 ```bash
-docker compose ps
+docker compose --env-file /etc/sovereignty/compose.env ps
 curl --fail --show-error https://vault.example.test/api/health
 ```
 
@@ -78,27 +82,30 @@ checksum mismatch. Add a new numbered migration instead.
 An example logical backup is:
 
 ```bash
-docker compose exec --no-TTY postgres pg_dump --format=custom --file=/tmp/svrgn.dump "$POSTGRES_DB"
-docker compose cp postgres:/tmp/svrgn.dump ./svrgn.dump
+docker compose --env-file /etc/sovereignty/compose.env exec --no-TTY postgres sh -c 'pg_dump --format=custom --file=/tmp/svrgn.dump "$POSTGRES_DB"'
+docker compose --env-file /etc/sovereignty/compose.env cp postgres:/tmp/svrgn.dump ./svrgn.dump
 ```
 
 `--no-TTY` produces automation-safe output and `--format=custom` creates a
 compressed archive suitable for `pg_restore`. Encrypt the resulting file at
 rest: authentication records remain sensitive even though vault contents are
-client-encrypted.
+client-encrypted. `sh -c` expands `POSTGRES_DB` inside the database container;
+Compose's environment file does not export variables into the operator's shell.
 
 Test restores against a separate empty deployment, never over the only live
 database:
 
 ```bash
-docker compose cp ./svrgn.dump postgres:/tmp/svrgn.dump
-docker compose exec postgres pg_restore --clean --if-exists --no-owner --dbname="$POSTGRES_DB" /tmp/svrgn.dump
+docker compose --env-file /etc/sovereignty/restore.env cp ./svrgn.dump postgres:/tmp/svrgn.dump
+docker compose --env-file /etc/sovereignty/restore.env exec --no-TTY postgres sh -c 'pg_restore --clean --if-exists --no-owner --dbname="$POSTGRES_DB" /tmp/svrgn.dump'
 ```
 
-`--clean --if-exists` replaces objects already present, and `--no-owner` avoids
+Run these commands from the separate restore deployment checkout, with its own
+Compose project name and volumes. `restore.env` must describe that isolated
+deployment. `--clean --if-exists` replaces objects already present, and `--no-owner` avoids
 restoring ownership from another PostgreSQL instance. After restoration, run
-the migrations service and verify `/api/health`; once encrypted sync exists,
-also unlock and decrypt a restored record from a client.
+the migrations service and verify `/api/health`; also unlock and decrypt a
+restored record from a client.
 
 ## Reverse proxy requirements
 
@@ -144,15 +151,15 @@ retained so offline clients can observe deletion.
 
 ## Verification status
 
-Unit tests validate environment, authentication, sync request handling, owner
-scoping, paging, conflicts, idempotent retries, and transaction boundaries with
-mocked PostgreSQL interfaces. Docker and PostgreSQL are unavailable in the
-current development environment, so image construction, schema application,
-concurrent transaction testing, and a backup/restore drill remain required
-integration checks on a Docker-capable host.
+Unit tests validate environment, authentication, sync request handling, paging,
+conflicts and retries. The [PostgreSQL integration harness](./POSTGRES_INTEGRATION.md)
+has also passed in GitHub CI: empty-schema migrations, owner isolation,
+idempotency, rollback, real concurrent writers, signup policy, password hashing,
+session authentication/signout and persisted rate limits. It builds and tears
+down its own disposable Compose fixture.
 
-The opt-in [PostgreSQL integration harness](./POSTGRES_INTEGRATION.md) now exercises
-real migrations, owner isolation, idempotent mutations, rollback, and concurrent
-writers in a disposable Compose database. Run `pnpm test:postgres` on a
-Docker-capable host. Its database cases are skipped in the ordinary suite and
-must not be counted as successful integration verification here.
+Run `pnpm test:postgres` on a Docker-capable host to reproduce that check. Docker
+remains unavailable in the interactive development container, so its ordinary
+test run skips the database cases explicitly. Production application image
+startup, operator TLS/proxy configuration, physical passkey ceremonies and a
+backup/restore drill still need their own verification.

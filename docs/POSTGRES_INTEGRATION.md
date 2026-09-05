@@ -73,14 +73,26 @@ the file before cleanup. The script currently targets Linux/macOS Docker hosts.
    with no extra cursor or mutation entry; simultaneous identical requests produce
    one application and one replay.
 
-The suite exercises the storage and migration boundary. HTTP authentication,
-cookie/session behavior and API validation remain covered by their separate tests;
-this harness does not claim end-to-end authentication or browser coverage.
+6. Actual Better Auth handlers with the production plugin configuration verify
+   closed/open/invite-only signup, password hashing, secure session cookies,
+   signout invalidation and existing-account sign-in after registration closes.
+   Invalid/expired/wrong-email invitations create no identity, and invitation
+   proof is absent from stored account/session/user rows.
+7. Origin rejection and database-backed signup throttling remain active across
+   auth instances. Origin and CSRF checks are explicitly enabled because Better
+   Auth otherwise detects Vitest and may bypass them during tests.
+
+Handlers run against real PostgreSQL through Request/Response calls. This does
+not exercise a reverse proxy, TLS handshake, physical passkey or browser cookie
+jar; those remain separate deployment/browser checks.
 
 ## Verification status
 
-Docker is unavailable in the development container where this harness was added.
-The guard test, TypeScript checks, ordinary tests and static review can run there;
-the real PostgreSQL cases remain explicitly skipped until the command above exits
-successfully on a Docker-capable machine. Do not report that skipped suite as a
-successful database integration run or evidence of production readiness.
+The Docker-based suite passed all 16 tests in
+[GitHub CI on 2026-09-05](https://github.com/alois-reinstadler/sovereignty/actions/runs/33956934265)
+at `b7ff15e`: seven migration/sync tests (including the URL guard) and nine account
+tests, with no skips. The image built successfully and Compose removed its
+disposable containers and network afterward. Docker remains unavailable in the
+interactive development container, where ordinary tests explicitly skip the 15
+database-dependent cases. CI verification does not establish production readiness
+or a completed backup/restore drill.
