@@ -47,10 +47,24 @@ jobs:
           rustc --version
           cargo --version
       - name: Compile development client without signing or bundling
-        run: pnpm --filter @svrgn/desktop exec tauri build --debug --no-bundle --no-sign --ci
+        run: pnpm --filter @svrgn/desktop exec tauri build --debug --no-bundle --no-sign --ci -- --locked
       - name: Test native code
         working-directory: apps/desktop/src-tauri
         run: cargo test --locked
+      - name: Install pinned native WebDriver bridge
+        if: runner.os == 'Linux'
+        run: cargo install tauri-driver --version 2.0.6 --locked
+      - name: Exercise compiled Linux vault in WebKit
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node apps/desktop/e2e/native-vault.mjs
+      - name: Preserve native UI test evidence
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-ui-evidence
+          path: apps/desktop/e2e/artifacts/
+          if-no-files-found: warn
+          retention-days: 3
       # This captures dependency metadata only, never application binaries.
       - name: Preserve resolved Rust lockfile
         if: always()
