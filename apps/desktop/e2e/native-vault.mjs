@@ -92,6 +92,34 @@ async function fill(selector, text) {
 	await command("POST", `/element/${id}/clear`, {});
 	await command("POST", `/element/${id}/value`, { text });
 }
+async function readClipboard() {
+	const { stdout } = await run(
+		"xclip",
+		["-selection", "clipboard", "-out"],
+		{ timeout: 2_000 },
+	);
+	return stdout;
+}
+async function writeClipboard(value) {
+	const child = ownedProcess(
+		"xclip",
+		["-selection", "clipboard", "-in", "-quiet"],
+		{ stdio: ["pipe", "ignore", "ignore"] },
+	);
+	child.stdin.end(value);
+	await once(child.stdin, "finish");
+}
+async function expectClipboard(expected, description) {
+	await until(async () => {
+		const actual = await readClipboard();
+		assert.equal(
+			actual,
+			expected,
+			`${description}; observed ${JSON.stringify(actual)}`,
+		);
+		return true;
+	}, description);
+}
 async function button(label) {
 	const found = await script(
 		`return [...document.querySelectorAll('button')].find(e =>
@@ -104,6 +132,16 @@ async function button(label) {
 		"arguments[0].scrollIntoView({block: 'center', behavior: 'instant'})",
 		found,
 	);
+	const id = found["element-6066-11e4-a52e-4f735466cecf"];
+	await command("POST", `/element/${id}/click`, {});
+}
+async function selectOption(label) {
+	const found = await script(
+		`return [...document.querySelectorAll('[role=option]')].find(e =>
+    e.getBoundingClientRect().height > 0 && e.textContent.includes(arguments[0]))`,
+		label,
+	);
+	assert.ok(found, `Visible option: ${label}`);
 	const id = found["element-6066-11e4-a52e-4f735466cecf"];
 	await command("POST", `/element/${id}/click`, {});
 }
@@ -264,8 +302,42 @@ try {
 		"unlocked desktop requires explicit lock before backup dialogs to preserve callbacks",
 	);
 	await screenshot("vault");
+	const username = "synthetic@example.invalid";
+	await button("Copy username");
+	await expectClipboard(
+		username,
+		"native username copy reached the X11 clipboard",
+	);
+	checks.push("real Copy username control wrote the synthetic value to X11");
 	await button("Lock vault");
 	await until(() => visible('input[name="master-password"]'), "manual lock");
+	await expectClipboard("", "manual lock cleared Sovereignty's copied username");
+	checks.push("locking cleared the synthetic value copied by Sovereignty");
+	await fill('input[name="master-password"]', master);
+	await button("Unlock vault");
+	await until(
+		() =>
+			script(
+				"return document.querySelector('[role=option]')?.textContent.includes(arguments[0])",
+				title,
+			),
+		"saved login restored for clipboard replacement check",
+		60_000,
+	);
+	await selectOption(title);
+	await button("Copy password");
+	await expectClipboard(password, "native password copy reached the X11 clipboard");
+	checks.push("real Copy password control wrote the synthetic value to X11");
+	const replacement = "Synthetic-external-clipboard-owner-2026!";
+	await writeClipboard(replacement);
+	await expectClipboard(replacement, "independent synthetic clipboard replacement");
+	await button("Lock vault");
+	await until(() => visible('input[name="master-password"]'), "replacement lock");
+	await expectClipboard(
+		replacement,
+		"locking preserved a clipboard value that Sovereignty did not copy",
+	);
+	checks.push("locking did not overwrite an independently replaced clipboard value");
 	assert.equal(
 		await script(
 			"return document.body.textContent.includes(arguments[0])",
