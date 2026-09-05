@@ -1,9 +1,10 @@
 # Sovereignty
 
 Sovereignty is an open-source, self-hostable password manager in active development.
-The current milestone adds a Chromium extension paired to a local encrypted vault,
-with optional authenticated, end-to-end encrypted synchronization in a TanStack
-Start web app and a Tauri desktop development client with a local encrypted vault.
+The TanStack Start web app provides a local encrypted vault and optional
+authenticated, end-to-end encrypted synchronization. Native development clients
+use Tauri for desktop and Expo/React Native for iOS. Browser-extension work is
+paused while these native clients are developed.
 
 > **Development preview:** Do not store real credentials yet. The cryptographic
 > design and implementation have not received an independent security audit.
@@ -25,11 +26,13 @@ Start web app and a Tauri desktop development client with a local encrypted vaul
 - Extension password generator, form selection, and reproducible ZIP packaging
 - Explicit submitted-login create/update review for forms that keep their document open
 - Tauri 2 local desktop vault with native focus-loss locking and a narrow close handshake
+- Expo/iOS local vault with encrypted journal storage, login editing, search,
+  favourites, native password generation and manual/background locking
 
 The extension is an unaudited development slice; see its permissions, installation,
 fixtures, and remaining boundaries in [docs/EXTENSION.md](./docs/EXTENSION.md).
-Account or vault recovery, sharing, audited production releases, and mobile apps
-remain later work. See [ROADMAP.md](./ROADMAP.md).
+Native account sync, device-assisted unlock, iOS system AutoFill, recovery,
+sharing and audited production releases remain later work. See [ROADMAP.md](./ROADMAP.md).
 The deployment boundary and operator instructions are in
 [docs/SELF_HOSTING.md](./docs/SELF_HOSTING.md).
 
@@ -62,7 +65,14 @@ Build the native desktop package separately with `pnpm build:desktop` after
 installing Rust and the platform dependencies listed in
 [`apps/desktop/README.md`](./apps/desktop/README.md).
 
-`--filter` selects the extension workspace; `verify:package` rebuilds twice and
+The mobile workspace requires a native development build; Expo Go does not
+include the patched cryptographic module. `pnpm --filter @svrgn/mobile build`
+exports its normal iOS JavaScript bundle. Actual simulator compilation and UI
+verification use Xcode on macOS; see [mobile development](./apps/mobile/README.md),
+[native verification](./docs/IOS_TESTING.md), and
+[the mobile boundary](./docs/MOBILE_BOUNDARY.md).
+
+`--filter` selects the named workspace; `verify:package` rebuilds twice and
 compares ZIP hashes. Run `pnpm test:postgres` separately on a Docker-enabled host
 for the isolated real-database suite. Ordinary tests report its skipped cases
 explicitly; see [docs/POSTGRES_INTEGRATION.md](./docs/POSTGRES_INTEGRATION.md).
@@ -73,7 +83,7 @@ explicitly; see [docs/POSTGRES_INTEGRATION.md](./docs/POSTGRES_INTEGRATION.md).
 - Vault contents are encrypted on the client and plaintext is never persisted.
 - Self-hosting is a product requirement, not an enterprise add-on.
 - Crypto formats and network protocols are versioned for migration.
-- Web, desktop, and future Expo clients share domain contracts.
+- Web, desktop, and Expo clients preserve domain contracts and encrypted formats.
 - No analytics, remote fonts, or third-party runtime scripts in the vault app.
 
 ## License

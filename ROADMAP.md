@@ -71,10 +71,19 @@ Server policy must complement—not replace—cryptographic access control.
 
 ## Phase 5 — Expo iOS client
 
-Reuse schemas, domain behavior, and protocol test vectors in an Expo app. Add
+The Expo workspace implements a local encrypted vault, login CRUD, search,
+favourites, native password generation and manual/background locking. Its native
+libsodium adapter passes 78 byte-exact interoperability checks in an iOS simulator,
+including the existing v1/v2 encrypted formats. It shares types and deterministic
+fixtures without importing browser crypto into Hermes. See
+[the mobile boundary](./docs/MOBILE_BOUNDARY.md) and
+[native verification](./docs/IOS_TESTING.md).
+
+Add encrypted backup transfer, native account/sync transport,
 Keychain/Secure Enclave integration, biometric device unlock, offline sync, and
 an iOS credential-provider extension. Native cryptography must remain compatible
-with the versioned vault format.
+with the versioned vault format. Physical-device secure-screen/biometric tests,
+Android validation, signing and store publication are separate gates.
 
 ## Phase 6 — Security and release readiness
 
