@@ -47,7 +47,8 @@ jobs:
       - name: Generate simulator project locally
         run: pnpm --filter @svrgn/mobile exec expo prebuild --platform ios --no-install
       - name: Install CocoaPods dependencies
-        run: pod install --project-directory=apps/mobile/ios
+        working-directory: apps/mobile/ios
+        run: pod install
       - name: Build unsigned simulator test entry
         env:
           ENTRY_FILE: ${{ github.workspace }}/apps/mobile/index.native-test.ts
