@@ -48,10 +48,25 @@ three days. Application binaries are excluded. Fixture passwords and keys are
 public synthetic values; they must never be used for a real vault. Native test
 results do not replace an independent security audit.
 
-The initial crypto gate passed on iOS 26.5 at commit `81f9bd4`:
-[run 33960127794](https://github.com/alois-reinstadler/sovereignty/actions/runs/33960127794).
-It reported 78 checks with no failures. This result verifies the native adapter;
-the normal application UI gate is tracked separately in the following increment.
-The current acceptance entry adds a native filesystem create/update/restore
-round-trip, for 79 required checks. It refuses to run storage fixtures in a
-nonempty vault sandbox and reports bounded diagnostics only from synthetic data.
+Both native gates passed on iOS 26.5 at commit `37e5bb3`:
+[run 33983047110](https://github.com/alois-reinstadler/sovereignty/actions/runs/33983047110).
+The acceptance entry reported 79 checks with no failures: 78 cryptographic
+compatibility checks and a real native filesystem create/update/restore round-trip.
+It refuses to run storage fixtures in a nonempty vault sandbox and reports
+bounded diagnostics only from synthetic data.
+
+The normal application XCTest passed creation, exact burst text entry, password
+reveal/hide and generated replacement, login persistence after termination,
+wrong-password rejection with input clearing, unlock, OS background locking,
+editing, cancelled deletion, confirmed deletion and restoration of the empty
+vault. The separate filesystem inspection required at least four encrypted
+snapshots without fixture plaintext; application logs contained no JavaScript
+exceptions. Screenshots and accessibility attachments were reviewed.
+
+[Full CI run 33983047150](https://github.com/alois-reinstadler/sovereignty/actions/runs/33983047150)
+also passed formatting, TypeScript, 437 ordinary tests, the production web build,
+generated routes, normal iOS bundle export, existing extension packaging checks,
+the high-severity pnpm audit and 16 separate real PostgreSQL integration checks.
+The audit still reports the moderate tooling advisory documented in
+[the mobile boundary](./MOBILE_BOUNDARY.md). This establishes a native development
+milestone, not physical-device security or production readiness.

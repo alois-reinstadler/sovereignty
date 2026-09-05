@@ -76,7 +76,10 @@ Server policy must complement—not replace—cryptographic access control.
 The Expo workspace implements a local encrypted vault, login CRUD, search,
 favourites, native password generation and manual/background locking. Its native
 libsodium adapter passes 78 byte-exact interoperability checks in an iOS simulator,
-including the existing v1/v2 encrypted formats. It shares types and deterministic
+including the existing v1/v2 encrypted formats, plus a real native filesystem
+round-trip. The normal app also passes XCTest creation, exact text entry,
+generated-password persistence, wrong-password rejection, background locking,
+editing and deletion. It shares types and deterministic
 fixtures without importing browser crypto into Hermes. See
 [the mobile boundary](./docs/MOBILE_BOUNDARY.md) and
 [native verification](./docs/IOS_TESTING.md).

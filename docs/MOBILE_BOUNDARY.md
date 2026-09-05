@@ -4,6 +4,13 @@ Sovereignty mobile is an unaudited, local development client. Native simulator
 tests are a compatibility gate, not an independent security audit. Account sync,
 device-assisted unlock and system AutoFill are not implemented in this slice.
 
+The 2026-09-05 pnpm audit passes the high-severity threshold but reports one
+moderate advisory, [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq),
+in the `uuid` dependency of Expo's Xcode project tooling. The advisory concerns
+buffer bounds in UUID v3/v5/v6. Mobile vault identifiers use native random bytes
+through the application's UUID v4 implementation. The tooling dependency remains
+unresolved; no cross-major override or advisory suppression was applied.
+
 ## Current trust boundary
 
 The React Native/Hermes process owns the unlocked document and key. Native JSI

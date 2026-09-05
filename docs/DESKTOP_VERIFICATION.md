@@ -1,6 +1,6 @@
 # Desktop development verification — 2026-09-05
 
-Verified code commit: `9a948c9`. [Native CI run 33960851750](https://github.com/alois-reinstadler/sovereignty/actions/runs/33960851750)
+Verified code commit: `f8293e3`. [Native CI run 33983223487](https://github.com/alois-reinstadler/sovereignty/actions/runs/33983223487)
 passes unsigned, unbundled Linux and macOS compilation and Rust navigation/close
 authorization tests. No application binaries were published.
 
@@ -9,13 +9,19 @@ creates a vault, generates a password, saves a login, checks that persisted data
 excludes fixture plaintext, locks, reloads, unlocks the same saved vault, and
 minimizes/restores the native window to prove focus-loss locking. The final
 structural UI report contains no script errors and no account/sync requests.
-The 14-check flow also rejects plaintext through real native IPC, cancels and
+The 18-check flow also rejects plaintext through real native IPC, cancels and
 retries the OS save dialog, compares exported bytes with the encrypted envelope,
 imports through the OS file dialog with explicit replacement confirmation, and
 closes through the window manager to verify the lock acknowledgement and process
 exit. Backups require an explicit lock before opening a native dialog so focus
 loss cannot unmount an import callback. Screenshots and test reports are retained
 with the CI run for three days.
+
+The clipboard checks click the real username/password Copy controls and inspect
+the private X11 clipboard independently. Lock clears Sovereignty's copied value
+and preserves a value subsequently replaced by another process. This does not
+establish macOS clipboard behavior; permission failures can still prevent
+best-effort clearing on other operating systems.
 
 [Full CI run 33960851627](https://github.com/alois-reinstadler/sovereignty/actions/runs/33960851627)
 passes formatting, TypeScript, 394 ordinary automated tests, production web build,

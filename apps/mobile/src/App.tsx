@@ -262,7 +262,11 @@ function Unlocked({ controller }: { controller: VaultController }) {
 					/>
 					<Text style={styles.secondary}>
 						{items.length} {items.length === 1 ? "login" : "logins"}
-						{query ? " match your search" : " saved locally"}
+						{query
+							? items.length === 1
+								? " matches your search"
+								: " match your search"
+							: " saved locally"}
 					</Text>
 					{items.map((item) => (
 						<View key={item.id} style={styles.card}>
