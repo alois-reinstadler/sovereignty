@@ -2,9 +2,10 @@
 
 This is an unaudited native development client. Use synthetic credentials only.
 Native simulator acceptance is a required gate; a JavaScript export or Node test
-does not prove native cryptographic compatibility. The first foundation commit
-contains the native adapter and acceptance entry; persistent login management is
-being completed in the following client increment.
+does not prove native cryptographic compatibility. The local client creates and
+unlocks a v1 vault, creates/edits/deletes logins, searches title/username/website,
+sorts favourites first, generates passwords, and locks manually or when inactive.
+Passwords stay masked until an explicit reveal gesture in the editor.
 
 Requires Node 24+, pnpm 11.24.0 and a native Expo development build. Expo Go does
 not contain this patched JSI module. Expo 57.0.20 bundles React Native 0.86.3,
@@ -32,12 +33,38 @@ Failures contain bounded check names only. CI must require `passed: true`, an
 empty failures array and the expected check count. This entry is never imported
 by the regular app and has no runtime URL, message or network trigger.
 
-Coverage includes Argon2id UTF-8/NUL byte passwords at minimum and interactive
+The first native runner performs 78 checks. Coverage includes Argon2id UTF-8/NUL byte passwords at minimum and interactive
 costs; binary and empty AAD; sliced inputs; exact v1 document/key and v2 key/login/
 tombstone encryption/decryption; authentication-tag, AAD, key and nonce tampering;
 native rejection of 0/1/15-byte ciphertexts; caller-owned subarray zeroization;
-and normal adapter v1 creation, unlock, rewrap and save. Current ordinary tests
-exercise pure encoding and validation only, not native crypto.
+and normal adapter v1 creation, unlock, rewrap and save. Ordinary tests exercise
+pure encoding, validation, encrypted journal publication and controller lifecycle
+with an explicit fake crypto provider; they do not verify native crypto.
+
+## Encrypted persistence and locking
+
+Only complete v1 encrypted envelopes are written into the private Documents
+`.svrgn` directory. Writes serialize through one journal, write a unique `.pending`
+file and publish it by a same-directory move without overwrite. Loading selects
+the highest committed sequence, ignores unpublished files, bounds file size
+before reading and fails closed on corruption of the latest snapshot. The app
+does not silently restore an older snapshot or overwrite an existing vault.
+Expo's rename API provides publication semantics; crash/power-loss durability
+and filesystem metadata protection have not been independently audited.
+
+Earlier encrypted snapshots are deliberately retained, including records removed
+from the current document. This is version history, not secure deletion. The
+journal stops before unbounded growth (2,000 entries); an operator must preserve
+and archive old encrypted files before continuing. No automatic destructive
+cleanup is included. Native file backup/import/export UI is not yet implemented.
+
+All encryption completes before asynchronous persistence. Locking immediately
+revokes the controller session, wipes owned key buffers, drops live and pending
+documents, and invalidates scheduled authentication and completion callbacks.
+An already encrypted write may finish after locking; it cannot unlock the UI.
+The editor unmounts on lock, and inactive/background events clear password fields.
+Native Argon2 blocks the JavaScript thread, so lifecycle delivery waits for the
+current synchronous call; native screenshot shielding remains a follow-up.
 
 ## Native patch provenance and scope
 

@@ -16,8 +16,12 @@ export type {
 export const MAX_ENVELOPE_BYTES = 12 * 1024 * 1024;
 const record = (v: unknown): v is Record<string, unknown> =>
 	typeof v === "object" && v !== null && !Array.isArray(v);
+const keys = (v: Record<string, unknown>, allowed: readonly string[]) =>
+	Object.keys(v).length === allowed.length &&
+	Object.keys(v).every((key) => allowed.includes(key));
 const payload = (v: unknown) =>
 	record(v) &&
+	keys(v, ["algorithm", "nonce", "ciphertext"]) &&
 	v.algorithm === "xchacha20-poly1305-ietf" &&
 	typeof v.nonce === "string" &&
 	v.nonce.length === 32 &&
@@ -30,6 +34,16 @@ export function parseEnvelope(serialized: string): EncryptedVaultEnvelope {
 	const v: unknown = JSON.parse(serialized);
 	if (
 		!record(v) ||
+		!keys(v, [
+			"format",
+			"version",
+			"id",
+			"kdf",
+			"createdAt",
+			"updatedAt",
+			"wrappedVaultKey",
+			"encryptedDocument",
+		]) ||
 		v.format !== "svrgn-encrypted-vault" ||
 		v.version !== 1 ||
 		!["id", "createdAt", "updatedAt"].every(
@@ -39,6 +53,7 @@ export function parseEnvelope(serialized: string): EncryptedVaultEnvelope {
 				(v[k] as string).length <= 128,
 		) ||
 		!record(v.kdf) ||
+		!keys(v.kdf, ["algorithm", "salt", "operationsLimit", "memoryLimit"]) ||
 		v.kdf.algorithm !== "argon2id13" ||
 		typeof v.kdf.salt !== "string" ||
 		v.kdf.salt.length !== 22 ||
@@ -112,7 +127,14 @@ export const aad = (
 export class MobileVault {
 	constructor(readonly crypto: NativeCrypto) {}
 	id() {
-		return this.crypto.encode(this.crypto.random(24));
+		const bytes = this.crypto.random(16);
+		bytes[6] = (bytes[6] & 15) | 64;
+		bytes[8] = (bytes[8] & 63) | 128;
+		const hex = Array.from(bytes, (byte) =>
+			byte.toString(16).padStart(2, "0"),
+		).join("");
+		this.crypto.zero(bytes);
+		return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 	}
 	private wrapping(password: string, kdf: PasswordKdfParameters) {
 		if (!password || password.length > 1024)
