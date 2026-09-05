@@ -4,8 +4,9 @@ The phases are ordered around complete user journeys rather than isolated
 feature lists. Each phase must retain backwards-compatible, versioned encrypted
 data or include a tested migration.
 
-Current development priority: finish self-hosting verification, then desktop/macOS,
-then Expo/iOS. Browser-extension development is paused at the user's request and
+Current development priority: desktop/macOS hardening and Expo/iOS. Disposable
+PostgreSQL integration and the first native desktop vault flow pass CI.
+Browser-extension development is paused at the user's request and
 will resume later; its unfinished browser checks do not block the native-client
 work. Sharing and organizations follow these client milestones.
 
@@ -27,8 +28,9 @@ accounts and devices, stores opaque encrypted records, enforces revisions, and
 supports incremental sync and conflict handling without receiving vault keys.
 Include Docker Compose, health checks, migrations, backups, restore testing,
 rate limiting, and an operator guide. The application paths are implemented;
-live Docker/PostgreSQL concurrency and disaster-recovery drills remain release
-readiness work.
+live Docker/PostgreSQL isolation, idempotency, concurrent conflicts and signup
+policies now pass disposable CI tests. Production deployment and disaster-recovery
+drills remain release readiness work.
 
 ## Phase 2 — Browser extension and migration
 
@@ -49,6 +51,12 @@ vault. Expand the implemented Chrome CSV importer to other password managers
 and browsers while retaining duplicate review and encrypted backup workflows.
 
 ## Phase 3 — Desktop convenience
+
+The local desktop vault now compiles on Linux/macOS and passes the Linux WebKit
+create/save/lock/restore and native focus-loss flow. It uses the existing encrypted
+formats and explicitly disables unavailable account/sync transport. Native backup
+dialogs, macOS interaction and device-local secure unlock need further verification
+and implementation. See [desktop verification](./docs/DESKTOP_VERIFICATION.md).
 
 Add OS keychain-backed device unlock, biometrics where supported, global quick
 access, tray/menu-bar behavior, auto-type where safe, signed packages, and a
