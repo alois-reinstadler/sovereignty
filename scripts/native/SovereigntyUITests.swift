@@ -28,7 +28,18 @@ final class SovereigntyUITests: XCTestCase {
         let item = element(id)
         visible(item)
         item.tap()
-        item.typeText(value + "\n")
+        // Let the native controlled input settle between key events. A single
+        // automation burst reordered a character on the loaded simulator.
+        // Keep using real keyboard events, and verify the resulting field.
+        for character in value {
+            item.typeText(String(character))
+        }
+        if item.elementType == .secureTextField {
+            XCTAssertEqual((item.value as? String)?.count, value.count)
+        } else {
+            XCTAssertEqual(item.value as? String, value)
+        }
+        item.typeText("\n")
     }
 
     private func evidence(_ name: String) {

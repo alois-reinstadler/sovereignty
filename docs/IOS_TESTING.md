@@ -36,6 +36,12 @@ the XCTest result bundle. Update and confirmed/cancelled deletion are exercised
 as well, with at least four encrypted journal snapshots required. This stage uses another newly created simulator and
 removes only that simulator afterward.
 
+The UI harness sends individual keyboard events and verifies each field before
+submitting. A bulk XCTest typing burst on a loaded simulator reordered a title
+character; pacing input avoids obscuring lifecycle checks behind a mistyped
+fixture. This does not establish fast typing, dictation or predictive-keyboard
+reliability on physical devices; those remain native input acceptance work.
+
 CI retains test reports, screenshots, build logs and the CocoaPods lockfile for
 three days. Application binaries are excluded. Fixture passwords and keys are
 public synthetic values; they must never be used for a real vault. Native test

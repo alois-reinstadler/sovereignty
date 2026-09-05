@@ -15,8 +15,19 @@ Run `pnpm install --frozen-lockfile` from the repository root, then from this fo
 run `pnpm exec expo install --check`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 The build command exports the production iOS JavaScript bundle, not a signed app.
 
-For local macOS development use `pnpm exec expo prebuild --platform ios` followed
-by `pnpm exec expo run:ios`; `--platform ios` generates only the iOS project.
+For local macOS simulator development, run from this folder:
+
+```bash
+pnpm exec expo prebuild --platform ios --no-install
+cp native/Podfile.lock ios/Podfile.lock
+(cd ios && pod install --deployment)
+pnpm exec expo run:ios --no-install
+```
+
+`--platform ios` generates only the iOS project; `--no-install` keeps dependency
+installation explicit. Copying the reviewed lockfile and using `--deployment`
+makes CocoaPods refuse dependency drift. The final command builds and opens a
+local simulator and starts Metro; it does not use the shared preview browser.
 SDK 57 requires a current Xcode 26 toolchain and iOS 16.4+. Generated native
 directories are ignored. No EAS account, store publication or signing is included.
 The application name/scheme is Sovereignty; the development bundle identifier is
@@ -29,17 +40,25 @@ through `ENTRY_FILE` in a Release simulator build with `CODE_SIGNING_ALLOWED=NO`
 It runs the actual patched JSI primitives against the public fixtures in
 `@svrgn/protocol-vectors`, then writes `Documents/native-test-result.json` in its
 own app sandbox: `{schemaVersion:1,passed:boolean,checks:number,failures:string[]}`.
-Failures contain bounded check names only. CI must require `passed: true`, an
+Failures contain check names and bounded synthetic storage diagnostics. CI requires `passed: true`, an
 empty failures array and the expected check count. This entry is never imported
 by the regular app and has no runtime URL, message or network trigger.
 
-The first native runner performs 78 checks. Coverage includes Argon2id UTF-8/NUL byte passwords at minimum and interactive
+The native runner requires 79 checks. Coverage includes Argon2id UTF-8/NUL byte passwords at minimum and interactive
 costs; binary and empty AAD; sliced inputs; exact v1 document/key and v2 key/login/
 tombstone encryption/decryption; authentication-tag, AAD, key and nonce tampering;
 native rejection of 0/1/15-byte ciphertexts; caller-owned subarray zeroization;
-and normal adapter v1 creation, unlock, rewrap and save. Ordinary tests exercise
+and normal adapter v1 creation, unlock, rewrap and save. The final check uses
+the real Expo filesystem to create, reload, update and restore an encrypted
+vault in an otherwise empty simulator sandbox. Ordinary tests exercise
 pure encoding, validation, encrypted journal publication and controller lifecycle
 with an explicit fake crypto provider; they do not verify native crypto.
+
+A separate XCTest stage drives the normal native app, including its unlocked
+list. This gate caught an unsupported Hermes `Array.prototype.toSorted` call
+that ordinary Node tests could not detect. The list now sorts a fresh filtered
+array, preserving controller state. JavaScript exceptions fail the native gate;
+see [iOS test evidence](../../docs/IOS_TESTING.md).
 
 ## Encrypted persistence and locking
 

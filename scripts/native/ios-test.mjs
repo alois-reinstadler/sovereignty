@@ -151,6 +151,13 @@ try {
 				"xchacha20-poly1305-ietf",
 			);
 		}
+		const logs = await applicationLogs(device);
+		await writeFile(`${artifacts}/simulator.log`, logs);
+		assert.doesNotMatch(
+			logs,
+			/Unhandled JS Exception|TypeError:|ReferenceError:|RCTFatalException/,
+			"Native application logged a JavaScript failure",
+		);
 		await writeFile(
 			`${artifacts}/ui-result.json`,
 			JSON.stringify(
@@ -162,13 +169,6 @@ try {
 				null,
 				2,
 			),
-		);
-		const logs = await applicationLogs(device);
-		await writeFile(`${artifacts}/simulator.log`, logs);
-		assert.doesNotMatch(
-			logs,
-			/Unhandled JS Exception|TypeError:|ReferenceError:|RCTFatalException/,
-			"Native application logged a JavaScript failure",
 		);
 		console.log(
 			"Native iOS vault UI lifecycle and encrypted persistence passed.",
