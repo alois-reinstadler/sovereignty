@@ -85,8 +85,9 @@ try {
 		true,
 		"Native interoperability tests failed; inspect result.json",
 	);
-	assert.ok(
-		Number.isSafeInteger(result.checks) && result.checks >= 20,
+	assert.equal(
+		result.checks,
+		78,
 		"Native test entry must execute the full acceptance suite",
 	);
 	assert.deepEqual(result.failures, []);

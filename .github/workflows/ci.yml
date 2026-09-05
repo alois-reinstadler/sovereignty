@@ -52,6 +52,9 @@ jobs:
       - name: Build web app
         run: pnpm build
 
+      - name: Export normal iOS application bundle
+        run: pnpm --filter @svrgn/mobile build
+
       - name: Build and package Chromium extension
         run: pnpm --filter @svrgn/extension verify:package
 
