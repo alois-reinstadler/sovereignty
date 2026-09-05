@@ -27,6 +27,14 @@ readiness work.
 
 ## Phase 2 — Browser extension and migration
 
+The Chromium companion development slice implements explicit vault pairing,
+exact-origin metadata matching, user-initiated filling into selected top-level
+forms, a popup password generator, and reproducible ZIP packaging. Its pairing
+session and plaintext are memory-only; restarting the worker or locking the vault
+revokes authorization. See [the extension boundary](./docs/EXTENSION.md).
+Save/update review, wider field support, and a Firefox transport remain follow-up
+work. Native browser integration and independent auditing remain release gates.
+
 Build WebExtension clients for Chromium and Firefox with safe URL matching,
 autofill, save/update prompts, password generation, and communication with the
 vault. Expand the implemented Chrome CSV importer to other password managers

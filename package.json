@@ -10,6 +10,8 @@
 	"scripts": {
 		"audit:high": "pnpm audit --audit-level high",
 		"build": "pnpm --filter @svrgn/web build",
+		"build:extension": "pnpm --filter @svrgn/extension build",
+		"package:extension": "pnpm --filter @svrgn/extension package",
 		"build:desktop": "pnpm --filter @svrgn/desktop build",
 		"check": "pnpm --recursive --if-present check",
 		"dev": "pnpm --filter @svrgn/web dev",

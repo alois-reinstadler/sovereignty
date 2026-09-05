@@ -51,5 +51,8 @@ jobs:
       - name: Build web app
         run: pnpm build
 
+      - name: Build and package Chromium extension
+        run: pnpm package:extension
+
       - name: Audit high-severity dependencies
         run: pnpm audit:high

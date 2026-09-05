@@ -60,12 +60,30 @@ Plaintext credentials exist only during message handling and the selected DOM wr
 `apps/extension/fixtures/login.html` includes benign separate forms, hidden inputs, ambiguous fields, an adversarial action, sandboxed frames, and controls that replace or disable a discovered form. Serve it with the managed preview workflow from `apps/extension`:
 
 ```sh
-dev-preview start sovereignty-extension-fixture -- pnpm exec vite --host '{host}' --port '{port}' --strictPort
+dev-preview start sovereignty-extension-fixture --health-path /fixtures/login.html -- pnpm exec vite --host '{host}' --port '{port}' --strictPort
 ```
 
-`--host` and `--port` receive the manager's allocation; `--strictPort` refuses occupied ports instead of moving. Append `/fixtures/login.html` to the reported local URL for the shared browser, and use the manager's tailnet URL for the user. Keep the main vault preview running. Check the accessibility tree, console, network, both form choices, changed DOM rejection, locking, and keyboard controls. Close every browser page you open. Never launch an alternate browser stack.
+`--health-path` selects the fixture because this workspace has no root index page. `--host` and `--port` receive the manager's allocation; `--strictPort` refuses occupied ports instead of moving. Append `/fixtures/login.html` to the reported local URL for the shared browser, and use the manager's tailnet URL for the user. Keep the main vault preview running. Check the accessibility tree, console, network, both form choices, changed DOM rejection, locking, and keyboard controls. Close every browser page you open. Never launch an alternate browser stack.
 
 The fixture exposes `window.sovereigntyFixture.discover()` and `fill(handle)` for browser automation of the actual `FormDiscovery` module with fixed synthetic values only. That fixture API is not bundled into the extension. Unit tests cover URL adversaries, exact schemas, oversized data, sender spoofing, replay/expiry, worker restart, active-tab changes, lock during fill, form visibility/identity, and multi-form selection. Actual extension loading and real Chrome external messaging must be verified separately; passing mocks is not evidence of successful installed extension behavior.
+
+`fixtures/popup.html` renders the actual popup against a visibly labelled synthetic
+runtime for keyboard, layout, expiry, and state testing. It never connects to a
+vault and is excluded from the extension build. The fixture server allocated port
+4045 in the development container; Chrome rejects that port as unsafe. Browser
+checks instead used the existing web Vite preview's development-only file serving
+at `/@fs/home/node/repos/svrgn/apps/extension/fixtures/login.html` and
+`/fixtures/popup.html` under the same file directory, on port 4044. No network
+configuration was changed. The unused fixture server was stopped.
+
+On 2026-09-05 Chrome verified the two benign form choices, selection of the second
+form without changing the first, replay rejection, DOM replacement and readonly
+rejection, popup keyboard fill, state changes and origin-draft preservation.
+The popup fixture had no console errors or failed/external network requests.
+The installed-extension ceremony remains unverified: the approved browser upload
+tool rejected both the worktree and repository unpacked directories as outside
+its configured workspace roots. Fix that tool configuration or manually load
+`apps/extension/dist` before claiming installed Chromium integration.
 
 ## Portability and remaining work
 

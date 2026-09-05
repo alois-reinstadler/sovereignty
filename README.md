@@ -1,9 +1,9 @@
 # Sovereignty
 
 Sovereignty is an open-source, self-hostable password manager in active development.
-The current milestone combines a local encrypted vault with optional authenticated,
-end-to-end encrypted synchronization in a TanStack Start web app. A Tauri desktop
-shell is included for the later native-client milestone.
+The current milestone adds a Chromium extension paired to a local encrypted vault,
+with optional authenticated, end-to-end encrypted synchronization in a TanStack
+Start web app. A Tauri desktop shell is included for the later native-client milestone.
 
 > **Development preview:** Do not store real credentials yet. The cryptographic
 > design and implementation have not received an independent security audit.
@@ -21,10 +21,14 @@ shell is included for the later native-client milestone.
 - Queue encrypted offline changes, restore another device, and resolve conflicts
 - Self-host the application and PostgreSQL with Docker Compose
 - TanStack Start web application using Astryx
+- Chromium Manifest V3 companion with explicit pairing and origin-bound filling
+- Extension password generator, form selection, and reproducible ZIP packaging
 - Tauri 2 desktop packaging scaffold
 
-Browser autofill, account or vault recovery, sharing, audited production releases,
-and mobile apps are not part of this milestone. See [ROADMAP.md](./ROADMAP.md).
+The extension is an unaudited development slice; see its permissions, installation,
+fixtures, and remaining boundaries in [docs/EXTENSION.md](./docs/EXTENSION.md).
+Account or vault recovery, sharing, audited production releases, and mobile apps
+remain later work. See [ROADMAP.md](./ROADMAP.md).
 The deployment boundary and operator instructions are in
 [docs/SELF_HOSTING.md](./docs/SELF_HOSTING.md).
 
@@ -47,6 +51,9 @@ pnpm check
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm build:extension
+pnpm routes:check
+pnpm audit:high
 ```
 
 Build the native desktop package separately with `pnpm build:desktop` after
