@@ -85,6 +85,15 @@ final class SovereigntyUITests: XCTestCase {
         tap("action-reveal-password")
         XCTAssertEqual(element("password").value as? String, "synthetic typed password")
         tap("action-generate-password")
+        let generatedField = element("password")
+        let replaced = NSPredicate { _, _ in
+            guard let value = generatedField.value as? String else { return false }
+            return value.count == 24 && value != "synthetic typed password"
+        }
+        // Native event dispatch can return before React commits the replacement.
+        // A length-only check accidentally accepted the 24-character old draft.
+        expectation(for: replaced, evaluatedWith: generatedField)
+        waitForExpectations(timeout: 20)
         let generatedPassword = try XCTUnwrap(element("password").value as? String)
         XCTAssertEqual(generatedPassword.count, 24)
         tap("action-hide-password")
