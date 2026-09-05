@@ -28,6 +28,19 @@ const xcrun = async (...args) =>
 			maxBuffer: 8 * 1024 * 1024,
 		})
 	).stdout.trim();
+const applicationLogs = (device) =>
+	xcrun(
+		"spawn",
+		device,
+		"log",
+		"show",
+		"--last",
+		"20m",
+		"--style",
+		"compact",
+		"--predicate",
+		'process == "Sovereignty" AND subsystem == "com.facebook.react.log"',
+	);
 let device;
 try {
 	const { runtimes } = JSON.parse(await xcrun("list", "runtimes", "--json"));
@@ -150,6 +163,13 @@ try {
 				2,
 			),
 		);
+		const logs = await applicationLogs(device);
+		await writeFile(`${artifacts}/simulator.log`, logs);
+		assert.doesNotMatch(
+			logs,
+			/Unhandled JS Exception|TypeError:|ReferenceError:|RCTFatalException/,
+			"Native application logged a JavaScript failure",
+		);
 		console.log(
 			"Native iOS vault UI lifecycle and encrypted persistence passed.",
 		);
@@ -208,19 +228,11 @@ try {
 		await xcrun("io", device, "screenshot", `${artifacts}/failure.png`).catch(
 			() => {},
 		);
-		const logs = await xcrun(
-			"spawn",
-			device,
-			"log",
-			"show",
-			"--last",
-			"3m",
-			"--style",
-			"compact",
-			"--predicate",
-			'process == "Sovereignty"',
-		).catch(() => "Simulator logs unavailable");
+		const logs = await applicationLogs(device).catch(
+			() => "Simulator logs unavailable",
+		);
 		await writeFile(`${artifacts}/simulator.log`, logs).catch(() => {});
+		console.error(logs.slice(-16_384));
 	}
 	throw error;
 } finally {

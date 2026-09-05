@@ -16,6 +16,7 @@ import { VaultController } from "./controller";
 import { nativeCrypto } from "./native-crypto";
 import { nativeStore } from "./native-storage";
 import { MobileVault, type VaultItem } from "./vault";
+import { visibleVaultItems } from "./vault-items";
 
 // Native values mirror Sovereignty's Astryx-themed web palette; no DOM components.
 const colors = {
@@ -183,17 +184,7 @@ function Unlocked({ controller }: { controller: VaultController }) {
 		isNew: boolean;
 	} | null>(null);
 	const query = search.toLocaleLowerCase("en");
-	const items = state.items
-		.filter((item) =>
-			[item.title, item.username, item.website].some((value) =>
-				value.toLocaleLowerCase("en").includes(query),
-			),
-		)
-		.toSorted(
-			(a, b) =>
-				Number(b.favorite) - Number(a.favorite) ||
-				a.title.localeCompare(b.title, "en"),
-		);
+	const items = visibleVaultItems(state.items, query);
 	return (
 		<>
 			<Action title="Lock vault" onPress={() => controller.lock()} />
