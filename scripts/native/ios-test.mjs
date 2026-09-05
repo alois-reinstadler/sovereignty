@@ -81,7 +81,11 @@ try {
 			);
 		} catch (error) {
 			output = error;
-			throw error;
+			console.error(error.stdout ?? "");
+			console.error(error.stderr ?? "");
+			throw new Error(
+				"Native XCTest failed; inspect the full UI log and attachments.",
+			);
 		} finally {
 			await writeFile(
 				`${artifacts}/ui.log`,
@@ -110,7 +114,7 @@ try {
 		const directory = `${container}/Documents/.svrgn`;
 		const names = await readdir(directory);
 		assert.ok(
-			names.filter((name) => /^vault-\d{12}\.svrgn$/.test(name)).length >= 2,
+			names.filter((name) => /^vault-\d{12}\.svrgn$/.test(name)).length >= 4,
 		);
 		for (const name of names) {
 			assert.match(name, /^vault-\d{12}\.svrgn(?:\.pending)?$/);
@@ -182,6 +186,7 @@ try {
 			JSON.stringify({ runtime: runtime.version, ...result }, null, 2),
 		);
 		await xcrun("io", device, "screenshot", `${artifacts}/native-test.png`);
+		console.log(`Native acceptance result: ${JSON.stringify(result)}`);
 		assert.equal(result.schemaVersion, 1);
 		assert.equal(
 			result.passed,
@@ -190,7 +195,7 @@ try {
 		);
 		assert.equal(
 			result.checks,
-			78,
+			79,
 			"Native test entry must execute the full acceptance suite",
 		);
 		assert.deepEqual(result.failures, []);

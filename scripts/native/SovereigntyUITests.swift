@@ -20,6 +20,7 @@ final class SovereigntyUITests: XCTestCase {
     private func tap(_ id: String) {
         let item = element(id)
         visible(item)
+        XCTAssertTrue(item.isEnabled, "Control must be enabled: " + id)
         item.tap()
     }
 
@@ -43,6 +44,13 @@ final class SovereigntyUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+    }
+
+    override func tearDownWithError() throws {
+        // Fixed synthetic sandbox only. Preserve useful failure diagnostics even
+        // if GitHub artifact upload is temporarily unavailable.
+        print("SVRGN_UI_FINAL_TREE\n" + app.debugDescription)
+        evidence("final-state")
     }
 
     func testEncryptedVaultLifecycle() throws {
@@ -85,6 +93,22 @@ final class SovereigntyUITests: XCTestCase {
         fill("master-password", password)
         tap("action-unlock-vault")
         XCTAssertTrue(element("action-edit-synthetic-ios-login").waitForExistence(timeout: 30))
+        tap("action-edit-synthetic-ios-login")
+        fill("website", "https://example.invalid")
+        tap("action-save-login")
+        XCTAssertTrue(element("action-edit-synthetic-ios-login").waitForExistence(timeout: 20))
+        tap("action-delete-synthetic-ios-login")
+        XCTAssertTrue(app.alerts["Delete login?"].waitForExistence(timeout: 10))
+        app.alerts["Delete login?"].buttons["Cancel"].tap()
+        XCTAssertTrue(element("action-edit-synthetic-ios-login").exists)
+        tap("action-delete-synthetic-ios-login")
+        app.alerts["Delete login?"].buttons["Delete"].tap()
+        XCTAssertTrue(app.staticTexts["0 logins saved locally"].waitForExistence(timeout: 20))
+        evidence("confirmed-deletion")
+        tap("action-lock-vault")
+        fill("master-password", password)
+        tap("action-unlock-vault")
+        XCTAssertTrue(app.staticTexts["0 logins saved locally"].waitForExistence(timeout: 30))
         tap("action-lock-vault")
         XCTAssertTrue(element("action-unlock-vault").waitForExistence(timeout: 20))
     }

@@ -32,7 +32,8 @@ native controls, creates a vault, generates and saves a login, verifies persiste
 after termination, and backgrounds the editor through the operating system.
 The harness then checks the app's journal contains encrypted v1 envelopes without
 the synthetic plaintext markers. Accessibility trees and screenshots accompany
-the XCTest result bundle. This stage uses another newly created simulator and
+the XCTest result bundle. Update and confirmed/cancelled deletion are exercised
+as well, with at least four encrypted journal snapshots required. This stage uses another newly created simulator and
 removes only that simulator afterward.
 
 CI retains test reports, screenshots, build logs and the CocoaPods lockfile for
@@ -44,3 +45,6 @@ The initial crypto gate passed on iOS 26.5 at commit `81f9bd4`:
 [run 33960127794](https://github.com/alois-reinstadler/sovereignty/actions/runs/33960127794).
 It reported 78 checks with no failures. This result verifies the native adapter;
 the normal application UI gate is tracked separately in the following increment.
+The current acceptance entry adds a native filesystem create/update/restore
+round-trip, for 79 required checks. It refuses to run storage fixtures in a
+nonempty vault sandbox and reports bounded diagnostics only from synthetic data.
