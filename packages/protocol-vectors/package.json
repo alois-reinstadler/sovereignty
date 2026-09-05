@@ -1,0 +1,27 @@
+{
+	"name": "@svrgn/protocol-vectors",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@11.24.0",
+	"exports": {
+		".": "./src/index.ts",
+		"./fixtures.json": "./fixtures/vectors.json"
+	},
+	"scripts": {
+		"check": "biome check src test fixtures package.json tsconfig.json",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit",
+		"generate": "SVRGN_UPDATE_PROTOCOL_VECTORS=1 vitest run test/generate.test.ts"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.4.5",
+		"@svrgn/sync-protocol": "workspace:*",
+		"@svrgn/vault-core": "workspace:*",
+		"@types/node": "22.20.1",
+		"effect": "3.22.1",
+		"libsodium-wrappers-sumo": "0.8.4",
+		"typescript": "6.0.3",
+		"vitest": "4.1.11"
+	}
+}
