@@ -11,13 +11,34 @@ import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 
 const artifacts = resolve("apps/desktop/e2e/artifacts");
-await mkdir(artifacts, { recursive: true });
-const storage = await mkdtemp(`${tmpdir()}/sovereignty-native-test-`);
 const run = promisify(execFile);
-// A private Xvfb display and window manager let the test exercise native focus
-// events without interacting with any user's desktop or browser.
-const manager = spawn("openbox", [], { stdio: "ignore" });
-const managerExit = once(manager, "exit");
+let storage;
+let port;
+const processes = [];
+let driverOutput = "";
+function ownedProcess(command, args, options) {
+	const child = spawn(command, args, options);
+	// Resolve on spawn failure too: never leave a rejected promise unhandled
+	// while another startup operation is awaiting readiness.
+	const exited = new Promise((done) => {
+		child.once("exit", done);
+		child.once("error", (error) => {
+			driverOutput += `\n${command}: ${error.message}`;
+			done();
+		});
+	});
+	processes.push({ child, exited });
+	return child;
+}
+async function stopProcess({ child, exited }) {
+	if (child.pid && child.exitCode === null && child.signalCode === null) {
+		child.kill("SIGTERM");
+		await Promise.race([exited, delay(5_000)]);
+		if (child.exitCode === null && child.signalCode === null)
+			child.kill("SIGKILL");
+	}
+	await exited;
+}
 async function freePort() {
 	const server = createServer();
 	server.listen(0, "127.0.0.1");
@@ -26,31 +47,6 @@ async function freePort() {
 	await new Promise((done) => server.close(done));
 	return port;
 }
-const port = await freePort();
-let nativePort = await freePort();
-while (nativePort === port) nativePort = await freePort();
-const driver = spawn(
-	"tauri-driver",
-	["--port", String(port), "--native-port", String(nativePort)],
-	{
-		env: {
-			...process.env,
-			XDG_DATA_HOME: `${storage}/data`,
-			XDG_CONFIG_HOME: `${storage}/config`,
-			XDG_CACHE_HOME: `${storage}/cache`,
-			// Xvfb has no hardware GPU. Keep this test-runner setting out of the app.
-			WEBKIT_DISABLE_DMABUF_RENDERER: "1",
-		},
-		stdio: ["ignore", "pipe", "pipe"],
-	},
-);
-let driverOutput = "";
-for (const stream of [driver.stdout, driver.stderr]) {
-	stream.on("data", (data) => {
-		driverOutput = `${driverOutput}${data}`.slice(-64_000);
-	});
-}
-const driverExit = once(driver, "exit");
 let session;
 const checks = [];
 async function request(method, path, body) {
@@ -129,6 +125,31 @@ async function diagnostics() {
 }
 
 try {
+	await mkdir(artifacts, { recursive: true });
+	storage = await mkdtemp(`${tmpdir()}/sovereignty-native-test-`);
+	port = await freePort();
+	let nativePort = await freePort();
+	while (nativePort === port) nativePort = await freePort();
+	// Only the private display created by xvfb-run.
+	ownedProcess("openbox", [], { stdio: "ignore" });
+	const driver = ownedProcess(
+		"tauri-driver",
+		["--port", String(port), "--native-port", String(nativePort)],
+		{
+			env: {
+				...process.env,
+				XDG_DATA_HOME: `${storage}/data`,
+				XDG_CONFIG_HOME: `${storage}/config`,
+				XDG_CACHE_HOME: `${storage}/cache`,
+				WEBKIT_DISABLE_DMABUF_RENDERER: "1",
+			},
+			stdio: ["ignore", "pipe", "pipe"],
+		},
+	);
+	for (const stream of [driver.stdout, driver.stderr])
+		stream.on("data", (data) => {
+			driverOutput = `${driverOutput}${data}`.slice(-64_000);
+		});
 	await until(() => request("GET", "/status"), "driver startup", 15_000);
 	const created = await request("POST", "/session", {
 		capabilities: {
@@ -296,18 +317,11 @@ try {
 	throw error;
 } finally {
 	if (session) await command("DELETE", "").catch(() => {});
-	driver.kill("SIGTERM");
-	await Promise.race([driverExit, delay(5_000)]);
-	if (driver.exitCode === null && driver.signalCode === null) {
-		driver.kill("SIGKILL");
-		await driverExit;
-	}
-	await writeFile(`${artifacts}/driver.log`, driverOutput);
-	manager.kill("SIGTERM");
-	await Promise.race([managerExit, delay(5_000)]);
-	if (manager.exitCode === null && manager.signalCode === null) {
-		manager.kill("SIGKILL");
-		await managerExit;
-	}
-	await rm(storage, { recursive: true, force: true });
+	// Cleanup actions are independent: an artifact failure must not strand a
+	// process, and one failed process shutdown must not skip another.
+	await Promise.allSettled(processes.reverse().map(stopProcess));
+	await Promise.allSettled([
+		writeFile(`${artifacts}/driver.log`, driverOutput),
+		storage ? rm(storage, { recursive: true, force: true }) : Promise.resolve(),
+	]);
 }
