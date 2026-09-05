@@ -54,9 +54,11 @@ and browsers while retaining duplicate review and encrypted backup workflows.
 
 The local desktop vault now compiles on Linux/macOS and passes the Linux WebKit
 create/save/lock/restore and native focus-loss flow. It uses the existing encrypted
-formats and explicitly disables unavailable account/sync transport. Native backup
-dialogs, macOS interaction and device-local secure unlock need further verification
-and implementation. See [desktop verification](./docs/DESKTOP_VERIFICATION.md).
+formats and explicitly disables unavailable account/sync transport. Locked-screen
+native encrypted backup dialogs and graceful OS close now pass Linux integration
+tests. macOS interaction, native dependency advisory remediation and device-local
+secure unlock remain release gates. See
+[desktop verification](./docs/DESKTOP_VERIFICATION.md).
 
 Add OS keychain-backed device unlock, biometrics where supported, global quick
 access, tray/menu-bar behavior, auto-type where safe, signed packages, and a
