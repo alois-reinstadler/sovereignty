@@ -6,6 +6,8 @@ import {
 	normalizeOrigin,
 	PAIRING_TTL_MS,
 	PORT_NAME,
+	PROPOSAL_TTL_MS,
+	parseSubmissionProposal,
 	parseVaultMessage,
 	REQUEST_TTL_MS,
 	record,
@@ -14,6 +16,8 @@ import {
 } from "@svrgn/extension-protocol";
 import {
 	CONTENT_PORT_NAME,
+	clearPlaintext,
+	parseCapturedSubmission,
 	parseForms,
 	parsePopupRequest,
 	trustedPopup,
@@ -96,6 +100,27 @@ let pairing: {
 	origin: string;
 	expiresAt: number;
 } | null = null;
+type ArmedCapture = {
+	grant: FillGrant;
+	token: string;
+	expiresAt: number;
+	ready: boolean;
+};
+type CapturedCandidate = ArmedCapture & { username: string; password: string };
+let capture: ArmedCapture | null = null;
+let candidate: CapturedCandidate | null = null;
+function clearCapture() {
+	capture = null;
+	if (candidate) clearPlaintext(candidate);
+	candidate = null;
+}
+function pruneCapture() {
+	if (
+		(capture && capture.expiresAt <= Date.now()) ||
+		(candidate && candidate.expiresAt <= Date.now())
+	)
+		clearCapture();
+}
 const grants = new Capabilities<FillGrant>();
 const pending = new Map<
 	string,
@@ -109,6 +134,7 @@ const pending = new Map<
 	}
 >();
 function lock() {
+	clearCapture();
 	const old = session;
 	session = null;
 	state = "locked";
@@ -130,7 +156,7 @@ function lock() {
 	old?.port.disconnect();
 }
 // A content port supplies browser-authenticated effective origin and document ID.
-// It has no message listener and never authorizes credential/list requests.
+// Only a separately armed one-shot submission may cross this port; never credential requests.
 chrome.runtime.onConnect.addListener((port) => {
 	const sender = port.sender;
 	if (
@@ -156,6 +182,11 @@ chrome.runtime.onConnect.addListener((port) => {
 	const previous = documents.get(sender.documentId);
 	let timer: ReturnType<typeof setTimeout>;
 	const forget = () => {
+		if (
+			capture?.grant.registration === registration ||
+			candidate?.grant.registration === registration
+		)
+			clearCapture();
 		clearTimeout(timer);
 		if (documents.get(registration.documentId) === registration) {
 			documents.delete(registration.documentId);
@@ -175,6 +206,42 @@ chrome.runtime.onConnect.addListener((port) => {
 	previous?.close();
 	timer = setTimeout(registration.close, SESSION_TTL_MS);
 	port.onDisconnect.addListener(forget);
+	port.onMessage.addListener((raw: unknown) => {
+		try {
+			const submitted = parseCapturedSubmission(raw);
+			const armed = capture;
+			if (
+				!submitted ||
+				!armed ||
+				submitted.token !== armed.token ||
+				armed.expiresAt <= Date.now() ||
+				armed.grant.registration !== registration ||
+				documents.get(registration.documentId) !== registration ||
+				session !== armed.grant.session ||
+				session.expiresAt <= Date.now()
+			)
+				return;
+			capture = null;
+			if (candidate) clearPlaintext(candidate);
+			candidate = {
+				ready: armed.ready,
+				grant: armed.grant,
+				token: crypto.randomUUID(),
+				expiresAt: Math.min(Date.now() + PROPOSAL_TTL_MS, session.expiresAt),
+				username: submitted.username,
+				password: submitted.password,
+			};
+			const captured = candidate;
+			setTimeout(
+				() => {
+					if (candidate === captured) clearCapture();
+				},
+				Math.max(0, captured.expiresAt - Date.now()),
+			);
+		} finally {
+			clearPlaintext(raw);
+		}
+	});
 	registrations.get(registration.documentId)?.resolve();
 });
 function requireSession(): Session {
@@ -326,6 +393,7 @@ async function handle(raw: unknown) {
 	const message = parsePopupRequest(raw);
 	if (!message) throw new Error("Invalid popup request.");
 	if (message.type === "status") {
+		pruneCapture();
 		if (session && session.expiresAt <= Date.now()) lock();
 		const settings = await chrome.storage.local.get("origin");
 		return {
@@ -333,7 +401,63 @@ async function handle(raw: unknown) {
 			state,
 			origin: companionOrigin(settings.origin) ?? "",
 			expiresAt: session?.expiresAt ?? null,
+			candidate:
+				candidate?.token && candidate.ready
+					? {
+							token: candidate.token,
+							origin: candidate.grant.origin,
+							username: candidate.username,
+							expiresAt: candidate.expiresAt,
+						}
+					: null,
 		};
+	}
+	if (message.type === "review") {
+		pruneCapture();
+		const captured = candidate;
+		if (!captured || !captured.ready || captured.token !== message.token)
+			throw new Error("Submission review expired.");
+		captured.token = "";
+		try {
+			await assertTarget(captured.grant);
+			if (
+				candidate !== captured ||
+				captured.expiresAt <= Date.now() ||
+				requireSession() !== captured.grant.session ||
+				requireDocument(captured.grant) !== captured.grant.registration
+			)
+				throw new Error("Submission review revoked.");
+			await bounded(
+				chrome.tabs.update(captured.grant.session.tabId, { active: true }),
+				captured.expiresAt,
+			);
+			if (
+				candidate !== captured ||
+				captured.expiresAt <= Date.now() ||
+				requireSession() !== captured.grant.session ||
+				requireDocument(captured.grant) !== captured.grant.registration
+			)
+				throw new Error("Submission review revoked.");
+			const proposal = parseSubmissionProposal({
+				v: 1,
+				type: "proposal",
+				id: crypto.randomUUID(),
+				origin: captured.grant.origin,
+				username: captured.username,
+				password: captured.password,
+				expiresAt: captured.expiresAt,
+			});
+			if (!proposal) throw new Error("Invalid submission proposal.");
+			try {
+				captured.grant.session.port.postMessage(proposal);
+			} finally {
+				clearPlaintext(proposal);
+			}
+			return { ok: true };
+		} finally {
+			clearPlaintext(captured);
+			if (candidate === captured) candidate = null;
+		}
 	}
 	if (message.type === "lock") {
 		lock();
@@ -365,6 +489,7 @@ async function handle(raw: unknown) {
 		return { ok: true };
 	}
 	if (message.type === "list") {
+		clearCapture();
 		const active = requireSession();
 		grants.clear();
 		const target = await activeTarget();
@@ -430,13 +555,69 @@ async function handle(raw: unknown) {
 	if (
 		!grant ||
 		grant.session !== requireSession() ||
-		!grant.items.includes(message.itemId) ||
+		(message.type === "fill" && !grant.items.includes(message.itemId)) ||
 		!grant.forms.includes(message.formId)
 	)
 		throw new Error("Fill approval expired. Refresh matches.");
 	await assertTarget(grant);
 	if (requireDocument(grant) !== grant.registration)
 		throw new Error("Document registration changed.");
+	if (message.type === "watch") {
+		if (grant.expiresAt <= Date.now() || requireSession() !== grant.session)
+			throw new Error("Watch approval expired.");
+		clearCapture();
+		const armed = {
+			ready: false,
+			grant,
+			token: crypto.randomUUID(),
+			expiresAt: Math.min(
+				Date.now() + PROPOSAL_TTL_MS,
+				grant.session.expiresAt,
+			),
+		};
+		capture = armed;
+		setTimeout(
+			() => {
+				if (capture === armed) capture = null;
+			},
+			Math.max(0, armed.expiresAt - Date.now()),
+		);
+		try {
+			const result: unknown = await bounded(
+				chrome.tabs.sendMessage(
+					grant.tabId,
+					{
+						type: "watch",
+						id: crypto.randomUUID(),
+						origin: grant.origin,
+						expiresAt: armed.expiresAt,
+						formId: message.formId,
+						token: armed.token,
+					},
+					{ documentId: grant.documentId, frameId: 0 },
+				),
+				grant.expiresAt,
+			);
+			if (
+				!record(result) ||
+				!keys(result, ["ok"]) ||
+				result.ok !== true ||
+				session !== grant.session ||
+				requireDocument(grant) !== grant.registration
+			)
+				throw new Error("Could not watch this form.");
+			armed.ready = true;
+			if (candidate?.grant === grant) candidate.ready = true;
+			return { ok: true };
+		} catch (error) {
+			if (capture === armed) capture = null;
+			if (candidate?.grant === grant) {
+				clearPlaintext(candidate);
+				candidate = null;
+			}
+			throw error;
+		}
+	}
 	let credential = await requestVault(
 		"credential",
 		grant.origin,

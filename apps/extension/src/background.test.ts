@@ -32,6 +32,8 @@ let sendMessage: ReturnType<typeof vi.fn>;
 let settings: Record<string, unknown>;
 let contentSenderChanges: Record<string, unknown>;
 let contentDisconnect: ReturnType<typeof event>;
+let contentMessages: ReturnType<typeof event>;
+let proposals: Record<string, unknown>[];
 let registerContent = true;
 const popupSender = {
 	id: extId,
@@ -62,6 +64,7 @@ async function pair(
 		onDisconnect: disconnect,
 		disconnect: vi.fn(() => disconnect.emit()),
 		postMessage: vi.fn((message: Record<string, unknown>) => {
+			if (message.type === "proposal") proposals.push(structuredClone(message));
 			if (message.type === "request") queueMicrotask(() => onRequest(message));
 		}),
 	};
@@ -81,6 +84,7 @@ beforeEach(async () => {
 	updated = event();
 	active = { id: 1, url: origin };
 	settings = {};
+	proposals = [];
 	sendMessage = vi.fn(
 		async (_tabId: number, message: Record<string, unknown>) =>
 			message.type === "discover"
@@ -106,6 +110,7 @@ beforeEach(async () => {
 		},
 		tabs: {
 			query: vi.fn(async () => [active]),
+			update: vi.fn(async () => ({ id: 9 })),
 			create: vi.fn(async ({ url }: { url: string }) => {
 				createdUrl = url;
 				return { id: 9 };
@@ -118,6 +123,7 @@ beforeEach(async () => {
 			executeScript: vi.fn(async () => {
 				const localDisconnect = event();
 				contentDisconnect = localDisconnect;
+				contentMessages = event();
 				if (registerContent)
 					contentConnections.emit({
 						name: "svrgn-content-registration-v1",
@@ -131,7 +137,7 @@ beforeEach(async () => {
 							documentLifecycle: "active",
 							...contentSenderChanges,
 						},
-						onMessage: event(),
+						onMessage: contentMessages,
 						onDisconnect: localDisconnect,
 						disconnect: vi.fn(() => localDisconnect.emit()),
 					});
@@ -170,6 +176,199 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 describe("background authorization", () => {
+	it("withholds an early captured candidate until a successful watch acknowledgement", async () => {
+		await pair();
+		const list = await popup({ type: "list" });
+		const knownToken = "44444444-4444-4444-8444-444444444444";
+		let acknowledge: (value: { ok: boolean }) => void = () => {
+			throw new Error("Missing acknowledgement promise");
+		};
+		sendMessage.mockImplementationOnce(
+			(_tabId: number, message: Record<string, unknown>) => {
+				const random = vi
+					.spyOn(crypto, "randomUUID")
+					.mockReturnValueOnce(knownToken);
+				contentMessages.emit({
+					type: "submitted",
+					token: message.token,
+					username: "early-user",
+					password: "synthetic-early-password",
+				});
+				random.mockRestore();
+				return new Promise((resolve) => {
+					acknowledge = resolve;
+				});
+			},
+		);
+		const watching = popup({ type: "watch", token: list.token, formId });
+		await vi.advanceTimersByTimeAsync(1);
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+		expect((await popup({ type: "review", token: knownToken })).ok).toBe(false);
+		expect(proposals).toEqual([]);
+		acknowledge({ ok: true });
+		expect((await watching).ok).toBe(true);
+		expect((await popup({ type: "status" })).candidate).toMatchObject({
+			token: knownToken,
+		});
+		expect((await popup({ type: "review", token: knownToken })).ok).toBe(true);
+		expect(proposals).toHaveLength(1);
+	});
+	it.each([
+		"failed",
+		"timeout",
+	])("discards early submission when watch acknowledgement %s", async (failure) => {
+		await pair();
+		const list = await popup({ type: "list" });
+		sendMessage.mockImplementationOnce(
+			(_tabId: number, message: Record<string, unknown>) => {
+				contentMessages.emit({
+					type: "submitted",
+					token: message.token,
+					username: "early-user",
+					password: "synthetic-early-password",
+				});
+				return failure === "failed"
+					? Promise.resolve({ ok: false })
+					: new Promise(() => {});
+			},
+		);
+		const result = popup({ type: "watch", token: list.token, formId });
+		await vi.advanceTimersByTimeAsync(1);
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+		if (failure === "timeout") await vi.advanceTimersByTimeAsync(10000);
+		expect((await result).ok).toBe(false);
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+		expect(proposals).toEqual([]);
+	});
+	async function arm() {
+		await pair();
+		const list = await popup({ type: "list" });
+		expect((await popup({ type: "watch", token: list.token, formId })).ok).toBe(
+			true,
+		);
+		return sendMessage.mock.calls.at(-1)?.[1].token as string;
+	}
+	const submission = (token: string) => ({
+		type: "submitted",
+		token,
+		username: "submitted-user",
+		password: "synthetic-submitted-password",
+	});
+	it("requires opted-in submission and sends only selected candidate for vault review", async () => {
+		const token = await arm();
+		const raw = submission(token);
+		contentMessages.emit(raw);
+		expect(raw).toEqual({
+			type: "submitted",
+			token,
+			username: "",
+			password: "",
+		});
+		const status = await popup({ type: "status" });
+		expect(status.candidate).toMatchObject({
+			origin,
+			username: "submitted-user",
+		});
+		expect(JSON.stringify(status)).not.toContain(
+			"synthetic-submitted-password",
+		);
+		expect(JSON.stringify(settings)).not.toContain("submitted-user");
+		const reviewToken = (status.candidate as { token: string }).token;
+		expect((await popup({ type: "review", token: reviewToken })).ok).toBe(true);
+		expect(proposals).toHaveLength(1);
+		expect(proposals[0]).toMatchObject({
+			type: "proposal",
+			origin,
+			username: "submitted-user",
+			password: "synthetic-submitted-password",
+		});
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+		expect((await popup({ type: "review", token: reviewToken })).ok).toBe(
+			false,
+		);
+	});
+	it("ignores unsolicited captures, wrong caps and replays", async () => {
+		await pair();
+		await popup({ type: "list" });
+		contentMessages.emit(submission(crypto.randomUUID()));
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+		const token = await arm();
+		contentMessages.emit(submission(crypto.randomUUID()));
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+		contentMessages.emit(submission(token));
+		const first = (await popup({ type: "status" })).candidate;
+		contentMessages.emit({ ...submission(token), username: "replayed-user" });
+		expect((await popup({ type: "status" })).candidate).toEqual(first);
+	});
+	it.each([
+		"lock",
+		"expiry",
+		"navigation",
+		"disconnect",
+		"restart",
+	])("drops captured plaintext on %s", async (change) => {
+		const token = await arm();
+		contentMessages.emit(submission(token));
+		const status = await popup({ type: "status" });
+		const reviewToken = (status.candidate as { token: string }).token;
+		if (change === "lock") await popup({ type: "lock" });
+		if (change === "expiry") vi.setSystemTime(Date.now() + 30001);
+		if (change === "navigation") updated.emit(1, { url: `${origin}/complete` });
+		if (change === "disconnect") contentDisconnect.emit();
+		if (change === "restart") {
+			vi.resetModules();
+			await import("./background");
+			internal.listeners.splice(0, 1);
+		}
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+		expect((await popup({ type: "review", token: reviewToken })).ok).toBe(
+			false,
+		);
+		expect(proposals).toEqual([]);
+	});
+	it("rejects stale watch, oversized submission and a different authenticated document", async () => {
+		const token = await arm();
+		contentMessages.emit({ ...submission(token), password: "x".repeat(4097) });
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+		const other = event();
+		contentConnections.emit({
+			name: "svrgn-content-registration-v1",
+			sender: {
+				id: extId,
+				tab: { id: 2 },
+				frameId: 0,
+				documentId: "other-document",
+				origin,
+				url: origin,
+			},
+			onMessage: other,
+			onDisconnect: event(),
+			disconnect: vi.fn(),
+		});
+		other.emit(submission(token));
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+		vi.setSystemTime(Date.now() + 30001);
+		contentMessages.emit(submission(token));
+		expect((await popup({ type: "status" })).candidate).toBeNull();
+	});
+	it("revokes review if vault locks while the vault tab activation is pending", async () => {
+		const token = await arm();
+		contentMessages.emit(submission(token));
+		const status = await popup({ type: "status" });
+		vi.mocked(chrome.tabs.update).mockImplementationOnce(async () => {
+			await popup({ type: "lock" });
+			return { id: 9 } as chrome.tabs.Tab;
+		});
+		expect(
+			(
+				await popup({
+					type: "review",
+					token: (status.candidate as { token: string }).token,
+				})
+			).ok,
+		).toBe(false);
+		expect(proposals).toEqual([]);
+	});
 	it("pairs, lists narrow metadata, fills only selected document and consumes approval", async () => {
 		await pair();
 		expect((await popup({ type: "status" })).state).toBe("connected");

@@ -1,9 +1,11 @@
 import {
 	normalizeOrigin,
+	PROPOSAL_TTL_MS,
 	parseBackgroundMessage,
 	parseVaultMessage,
 	REQUEST_TTL_MS,
 	SESSION_TTL_MS,
+	type SubmissionProposal,
 } from "@svrgn/extension-protocol";
 import type { VaultItem } from "./models";
 
@@ -65,6 +67,10 @@ export function attachCompanion(
 	readItems: () => ReadonlyArray<VaultItem> | null,
 	onState: (state: CompanionState) => void,
 	now: () => number = Date.now,
+	proposals?: {
+		offer: (proposal: SubmissionProposal, isLive: () => boolean) => void;
+		clear: () => void;
+	},
 ) {
 	let closed = false;
 	let paired = false;
@@ -77,6 +83,7 @@ export function attachCompanion(
 		closed = true;
 		clearTimeout(timer);
 		seen.clear();
+		proposals?.clear();
 		port.onMessage.removeListener(receive);
 		port.onDisconnect.removeListener(disconnected);
 		try {
@@ -109,89 +116,115 @@ export function attachCompanion(
 		}
 	};
 	const receive = (raw: unknown) => {
-		if (closed) return;
-		const message = parseBackgroundMessage(raw);
-		if (!message) {
-			stop("error");
-			return;
-		}
-		const time = now();
-		if (message.type === "paired") {
+		try {
+			if (closed) return;
+			const message = parseBackgroundMessage(raw);
+			if (!message) {
+				stop("error");
+				return;
+			}
+			const time = now();
+			if (message.type === "paired") {
+				if (
+					paired ||
+					time - start > REQUEST_TTL_MS ||
+					message.expiresAt <= time ||
+					message.expiresAt > time + SESSION_TTL_MS
+				) {
+					stop("error");
+					return;
+				}
+				paired = true;
+				expiresAt = message.expiresAt;
+				clearTimeout(timer);
+				timer = setTimeout(() => stop("expired"), expiresAt - time);
+				onState("connected");
+				return;
+			}
+			if (!paired || time >= expiresAt || time < start) {
+				stop("expired");
+				return;
+			}
+			if (seen.has(message.id) || seen.size >= 1000) {
+				stop("error");
+				return;
+			}
+			seen.add(message.id);
 			if (
-				paired ||
-				time - start > REQUEST_TTL_MS ||
 				message.expiresAt <= time ||
-				message.expiresAt > time + SESSION_TTL_MS
+				message.expiresAt >
+					time +
+						(message.type === "proposal" ? PROPOSAL_TTL_MS : REQUEST_TTL_MS)
+			) {
+				send({ v: 1, type: "error", id: message.id, code: "expired" });
+				return;
+			}
+			if (
+				typeof message.origin !== "string" ||
+				!normalizeOrigin(message.origin)
 			) {
 				stop("error");
 				return;
 			}
-			paired = true;
-			expiresAt = message.expiresAt;
-			clearTimeout(timer);
-			timer = setTimeout(() => stop("expired"), expiresAt - time);
-			onState("connected");
-			return;
-		}
-		if (!paired || time >= expiresAt || time < start) {
-			stop("expired");
-			return;
-		}
-		if (seen.has(message.id) || seen.size >= 1000) {
-			stop("error");
-			return;
-		}
-		seen.add(message.id);
-		if (
-			message.expiresAt <= time ||
-			message.expiresAt > time + REQUEST_TTL_MS
-		) {
-			send({ v: 1, type: "error", id: message.id, code: "expired" });
-			return;
-		}
-		if (
-			typeof message.origin !== "string" ||
-			!normalizeOrigin(message.origin)
-		) {
-			stop("error");
-			return;
-		}
-		const items = readItems();
-		if (!items) {
-			stop();
-			return;
-		}
-		const matches = items.filter(
-			(item) => normalizeOrigin(item.website) === message.origin,
-		);
-		if (message.operation === "list") {
+			const items = readItems();
+			if (!items) {
+				stop();
+				return;
+			}
+			if (message.type === "proposal") {
+				try {
+					proposals?.offer(
+						message,
+						() =>
+							!closed && paired && now() < expiresAt && readItems() !== null,
+					);
+				} finally {
+					message.username = "";
+					message.password = "";
+				}
+				return;
+			}
+			const matches = items.filter(
+				(item) => normalizeOrigin(item.website) === message.origin,
+			);
+			if (message.operation === "list") {
+				send({
+					v: 1,
+					type: "result",
+					id: message.id,
+					items: matches.slice(0, 50).map(({ id, title, username }) => ({
+						id,
+						title: title.slice(0, 200),
+						username: username.slice(0, 1000),
+					})),
+				});
+				return;
+			}
+			const item = matches.find((candidate) => candidate.id === message.itemId);
+			if (!item) {
+				send({ v: 1, type: "error", id: message.id, code: "not_found" });
+				return;
+			}
+			// Single synchronous read + send: there is no async gap during which lock
+			// can start, and no retained response after the browser serializes it.
 			send({
 				v: 1,
-				type: "result",
+				type: "credential",
 				id: message.id,
-				items: matches.slice(0, 50).map(({ id, title, username }) => ({
-					id,
-					title: title.slice(0, 200),
-					username: username.slice(0, 1000),
-				})),
+				itemId: item.id,
+				username: item.username,
+				password: item.password,
 			});
-			return;
+		} finally {
+			if (raw && typeof raw === "object") {
+				try {
+					if ("username" in raw) raw.username = "";
+					if ("password" in raw) raw.password = "";
+				} catch {
+					/* Discard immutable or hostile malformed input. */
+				}
+			}
 		}
-		const item = matches.find((candidate) => candidate.id === message.itemId);
-		if (!item) {
-			send({ v: 1, type: "error", id: message.id, code: "not_found" });
-			return;
-		}
-		// Single synchronous read + send: there is no async gap during which lock
-		// can start, and no retained response after the browser serializes it.
-		send({
-			v: 1,
-			type: "credential",
-			id: message.id,
-			itemId: item.id,
-			username: item.username,
-			password: item.password,
-		});
 	};
 	port.onMessage.addListener(receive);
 	port.onDisconnect.addListener(disconnected);

@@ -6,12 +6,16 @@ const handlers = vi.hoisted(() => ({
 	discover: vi.fn(() => []),
 	fill: vi.fn(() => true),
 	clear: vi.fn(),
+	clearDiscovery: vi.fn(),
+	watch: vi.fn(() => true),
 }));
 vi.mock("./forms", () => ({
 	FormDiscovery: class {
 		discover = handlers.discover;
 		fill = handlers.fill;
 		clear = handlers.clear;
+		clearDiscovery = handlers.clearDiscovery;
+		watch = handlers.watch;
 	},
 }));
 type Listener = (
@@ -38,6 +42,7 @@ beforeEach(async () => {
 	vi.stubGlobal("origin", location.origin);
 	removeListener = vi.fn();
 	connect = vi.fn(() => ({
+		postMessage: vi.fn(),
 		disconnect: vi.fn(),
 		onDisconnect: {
 			addListener: (listener: () => void) => {
@@ -67,6 +72,49 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 describe("content boundary", () => {
+	it("arms only a bounded top-document watch with an opaque capability", () => {
+		const respond = vi.fn();
+		const formId = id();
+		const token = id();
+		const message = {
+			type: "watch",
+			id: id(),
+			origin: location.origin,
+			expiresAt: Date.now() + 30000,
+			formId,
+			token,
+		};
+		receive(message, { id: extensionId }, respond);
+		expect(handlers.watch).toHaveBeenCalledWith(
+			formId,
+			location.origin,
+			message.expiresAt,
+			expect.any(Function),
+			expect.any(Function),
+		);
+		expect(respond).toHaveBeenCalledWith({ ok: true });
+		handlers.watch.mockClear();
+		receive(
+			{ ...message, id: id(), expiresAt: Date.now() + 30001 },
+			{ id: extensionId },
+			respond,
+		);
+		expect(handlers.watch).not.toHaveBeenCalled();
+	});
+	it("clears malformed or wrong-origin plaintext before rejecting content requests", () => {
+		const raw = {
+			type: "fill",
+			id: id(),
+			origin: "https://victim.test",
+			expiresAt: Date.now() + 10000,
+			formId: id(),
+			username: "synthetic",
+			password: "synthetic-password",
+		};
+		receive(raw, { id: extensionId }, vi.fn());
+		expect(raw.password).toBe("");
+		expect(handlers.fill).not.toHaveBeenCalled();
+	});
 	it("registers only a port and rejects a top-level opaque effective origin", () => {
 		expect(connect).toHaveBeenCalledExactlyOnceWith({
 			name: CONTENT_PORT_NAME,

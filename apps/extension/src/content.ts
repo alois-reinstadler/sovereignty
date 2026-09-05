@@ -1,6 +1,14 @@
-import { normalizeOrigin, requestIsLive } from "@svrgn/extension-protocol";
+import {
+	normalizeOrigin,
+	PROPOSAL_TTL_MS,
+	requestIsLive,
+} from "@svrgn/extension-protocol";
 import { FormDiscovery } from "./forms";
-import { CONTENT_PORT_NAME, parseContentRequest } from "./messages";
+import {
+	CONTENT_PORT_NAME,
+	clearPlaintext,
+	parseContentRequest,
+} from "./messages";
 
 // Reinjection replaces the old listener and its DOM handles instead of multiplying it.
 type Context = typeof globalThis & { __svrgnCleanup?: () => void };
@@ -20,22 +28,54 @@ const listener = (
 		!message ||
 		window.top !== window ||
 		globalThis.origin !== message.origin ||
-		!requestIsLive(message) ||
+		!(message.type === "watch"
+			? message.expiresAt > Date.now() &&
+				message.expiresAt <= Date.now() + PROPOSAL_TTL_MS
+			: requestIsLive(message)) ||
 		message.origin !== normalizeOrigin(location.href) ||
 		seen.has(message.id)
 	) {
+		clearPlaintext(raw);
 		respond({ ok: false });
 		return;
 	}
 	seen.add(message.id);
 	if (seen.size > 100) {
+		clearPlaintext(raw);
 		discovery.clear();
 		respond({ ok: false });
 		return;
 	}
 	if (message.type === "discover") {
 		respond({ ok: true, forms: discovery.discover(document, message.origin) });
-		setTimeout(() => discovery.clear(), 10_000);
+		setTimeout(() => discovery.clearDiscovery(), 10_000);
+		return;
+	}
+	if (message.type === "watch") {
+		const token = message.token;
+		const origin = message.origin;
+		const ok = discovery.watch(
+			message.formId,
+			origin,
+			message.expiresAt,
+			(credentials) => {
+				try {
+					port.postMessage({
+						type: "submitted",
+						token,
+						username: credentials.username,
+						password: credentials.password,
+					});
+				} catch {
+					/* Disconnected captures are discarded. */
+				}
+			},
+			() =>
+				window.top === window &&
+				globalThis.origin === origin &&
+				normalizeOrigin(location.href) === origin,
+		);
+		respond({ ok });
 		return;
 	}
 	let ok = false;

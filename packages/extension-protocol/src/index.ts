@@ -1,6 +1,7 @@
 export const SESSION_TTL_MS = 5 * 60_000;
 export const REQUEST_TTL_MS = 10_000;
 export const PAIRING_TTL_MS = 60_000;
+export const PROPOSAL_TTL_MS = 30_000;
 export const PORT_NAME = "svrgn-companion-v1";
 export const MAX_MESSAGE_BYTES = 80_000;
 export type Match = { id: string; title: string; username: string };
@@ -24,7 +25,44 @@ export type CompanionRequest =
 	  };
 export type BackgroundMessage =
 	| CompanionRequest
+	| SubmissionProposal
 	| { v: 1; type: "paired"; expiresAt: number };
+export type SubmissionProposal = {
+	v: 1;
+	type: "proposal";
+	id: string;
+	origin: string;
+	expiresAt: number;
+	username: string;
+	password: string;
+};
+export function parseSubmissionProposal(
+	value: unknown,
+): SubmissionProposal | null {
+	if (
+		!record(value) ||
+		!keys(value, [
+			"v",
+			"type",
+			"id",
+			"origin",
+			"expiresAt",
+			"username",
+			"password",
+		]) ||
+		value.v !== 1 ||
+		value.type !== "proposal" ||
+		!uuid(value.id) ||
+		typeof value.origin !== "string" ||
+		normalizeOrigin(value.origin) !== value.origin ||
+		!timestamp(value.expiresAt) ||
+		!textField(value.username, 1000) ||
+		!textField(value.password, 4096) ||
+		value.password.length === 0
+	)
+		return null;
+	return value as SubmissionProposal;
+}
 export type VaultMessage =
 	| { v: 1; type: "hello"; token: string }
 	| { v: 1; type: "locked" }
@@ -146,6 +184,8 @@ export function parseCompanionRequest(value: unknown): CompanionRequest | null {
 export function parseBackgroundMessage(
 	value: unknown,
 ): BackgroundMessage | null {
+	const proposal = parseSubmissionProposal(value);
+	if (proposal) return proposal;
 	const request = parseCompanionRequest(value);
 	if (request) return request;
 	if (

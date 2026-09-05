@@ -1,5 +1,57 @@
 # Sovereignty Chromium companion
 
+## Explicit submitted-login review
+
+After entering invented credentials on a supported form, open the extension,
+refresh matches, select the intended form, and choose **Watch next submission**.
+The extension watches only that form for 30 seconds. It does not observe
+keystrokes or capture any submission before this explicit opt-in. After the
+form submits, reopen the popup and choose **Review in vault**. The vault displays
+the exact origin and username and requires **Confirm and create login** or an
+explicit existing matching account selection followed by **Confirm and update
+login**. A submission does not establish successful authentication: confirm that
+sign-in succeeded yourself. Nothing is saved automatically and passwords are not
+revealed in the review UI.
+
+This conservative slice supports submissions that keep the original document
+alive, such as single-page applications. Full-page navigation, reload, content
+port disconnection, vault locking, or worker restart discards the capture. A
+traditional form that navigates immediately therefore cannot offer a review;
+the extension does not claim general successful-login detection. A same-origin
+URL change also discards the candidate. Browser tooling currently verifies actual
+DOM modules and synthetic transport separately; installed external messaging
+still requires native extension loading verification.
+
+Watching consumes a fresh popup capability bound to the paired session,
+browser-authenticated effective origin, original tab/document and selected form.
+The content port may send only one bounded username/password payload with that
+random capability. The background derives the origin from its registration,
+rejects unsolicited/replayed/stale captures, and clears plaintext on failed watch
+acknowledgement. Form identity, writable visibility, form action and any explicit
+submitter action are rechecked at submission. The submission event remains
+untrusted evidence; a compromised same-origin page can fabricate the values but
+cannot authorize saving or obtain credentials through this capture path.
+
+At most one captured candidate remains in background memory for 30 seconds;
+status responses contain only origin, username, expiry and a random review token.
+There are no storage writes containing capture data and no new permissions.
+Review consumes the token, activates the existing paired vault tab, sends one
+validated proposal over that session's port, and releases background plaintext
+immediately after browser serialization. The vault owns one pending proposal,
+clears it on cancel, expiry, lock, disconnect or unmount, and rechecks session and
+deadline immediately before applying its existing encrypted persistence path.
+Updates require the chosen record to remain the same immutable record object
+from the displayed matching set, with the same exact origin; stale choices fail
+instead of overwriting. Title, website, notes, favorite and creation date are
+preserved. No encrypted format, storage key or sync protocol changes occur.
+
+Once explicit approval begins before expiry, local encryption and persistence
+may finish afterward. Cancellation or expiry cannot retract already approved
+persistence. JavaScript copies and garbage collection still prevent guaranteed
+memory zeroization. Vault pairing and account/sync authentication remain separate
+sessions. Multi-step capture, navigating-form handoff and reliable authentication
+success detection remain unsupported.
+
 This is an unaudited development extension. Use invented credentials only until an independent security audit. It is self-hosted and uses the existing unlocked web vault; it does not implement a second decrypted vault or send a vault to a login page.
 
 ## Build and install
@@ -104,4 +156,4 @@ its configured workspace roots. Fix that tool configuration or manually load
 
 Pure protocol, generator, form discovery and serialization validation are independent of Chrome API calls. The `background.ts` and thin `content.ts`/popup messaging adapters contain Chromium integration. Firefox requires an explicit adapter, manifest conversion, Promise/event parity checks, and a different reviewed companion transport: ordinary webpage `runtime.connect` external messaging is not assumed available. Do not advertise this package as Firefox-compatible.
 
-Save-new-login and update-existing-login prompts need a separately reviewed, user-approved capture protocol and bounded plaintext lifetime. A submit event does not prove authentication succeeded, so this version neither silently captures passwords nor claims to detect successful login. Multi-step forms, native desktop companionship, macOS secure storage and Expo/iOS credential providers remain later milestones. No native signing, app-store enrollment, extension-store submission or production deployment is included.
+Explicit submitted-login review supports creating and updating logins for forms that keep the original document alive. Navigating forms and multi-step flows remain unsupported, and a submit event never proves successful authentication. Native desktop companionship, macOS secure storage and Expo/iOS credential providers remain later milestones. No native signing, app-store enrollment, extension-store submission or production deployment is included.

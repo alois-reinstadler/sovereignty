@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { generatePassword } from "./generator";
 import {
+	parseCandidateMetadata,
+	parseCapturedSubmission,
 	parseContentRequest,
 	parseForms,
 	parsePopupRequest,
@@ -9,6 +11,52 @@ import {
 
 const id = "00000000-0000-4000-8000-000000000001";
 describe("internal boundaries", () => {
+	it("bounds capture schemas and keeps popup metadata password-free", () => {
+		const submitted = {
+			type: "submitted",
+			token: id,
+			username: "synthetic",
+			password: "synthetic-password",
+		};
+		expect(parseCapturedSubmission(submitted)).not.toBeNull();
+		expect(
+			parseCapturedSubmission({ ...submitted, origin: "https://victim.test" }),
+		).toBeNull();
+		expect(
+			parseCapturedSubmission({ ...submitted, password: "x".repeat(4097) }),
+		).toBeNull();
+		expect(
+			parseCapturedSubmission({ ...submitted, token: "guess" }),
+		).toBeNull();
+		const metadata = {
+			token: id,
+			origin: "https://example.test",
+			username: "synthetic",
+			expiresAt: Date.now() + 30000,
+		};
+		expect(parseCandidateMetadata(metadata)).not.toBeNull();
+		expect(parseCandidateMetadata({ ...metadata, password: "bad" })).toBeNull();
+		expect(
+			parseCandidateMetadata({ ...metadata, expiresAt: Date.now() }),
+		).toBeNull();
+		expect(
+			parseContentRequest({
+				type: "watch",
+				id,
+				origin: "https://example.test",
+				expiresAt: Date.now() + 30000,
+				formId: id,
+				token: id,
+			}),
+		).not.toBeNull();
+		expect(
+			parsePopupRequest({
+				type: "review",
+				token: id,
+				origin: "https://victim.test",
+			}),
+		).toBeNull();
+	});
 	it("rejects page-provided origin in popup list", () => {
 		expect(parsePopupRequest({ type: ["status"] })).toBeNull();
 		expect(

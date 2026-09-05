@@ -413,6 +413,7 @@ export function VaultApp() {
 	return (
 		<main className="vault-shell">
 			<ExtensionCompanion
+				persist={persist}
 				readItems={() => {
 					if (
 						lockingRef.current ||

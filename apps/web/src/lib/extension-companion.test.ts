@@ -20,7 +20,7 @@ const item: VaultItem = {
 const token = "22222222-2222-4222-8222-222222222222";
 const id = "33333333-3333-4333-8333-333333333333";
 
-function fixture() {
+function fixture(proposals?: Parameters<typeof attachCompanion>[5]) {
 	vi.useFakeTimers();
 	vi.setSystemTime(1_000_000);
 	const messages = new Set<(message: unknown) => void>();
@@ -47,7 +47,7 @@ function fixture() {
 	};
 	const read = vi.fn<() => ReadonlyArray<VaultItem> | null>(() => [item]);
 	const state = vi.fn();
-	const stop = attachCompanion(port, token, read, state);
+	const stop = attachCompanion(port, token, read, state, Date.now, proposals);
 	const receive = (message: unknown) => {
 		for (const fn of messages) fn(message);
 	};
@@ -68,6 +68,63 @@ function fixture() {
 afterEach(() => {
 	vi.clearAllTimers();
 	vi.useRealTimers();
+});
+describe("companion submission proposals", () => {
+	const proposal = () => ({
+		v: 1,
+		type: "proposal",
+		id,
+		origin: "https://example.test",
+		expiresAt: Date.now() + 30000,
+		username: "submitted-user",
+		password: "synthetic-submitted-password",
+	});
+	it("accepts one bounded proposal with live-session guard and clears transport plaintext", () => {
+		let guard: () => boolean = () => false;
+		const copies: unknown[] = [];
+		const clear = vi.fn();
+		const f = fixture({
+			offer: (value, isLive) => {
+				copies.push({ ...value });
+				guard = isLive;
+			},
+			clear,
+		});
+		f.pair();
+		const message = proposal();
+		f.receive(message);
+		expect(copies).toEqual([
+			expect.objectContaining({ password: "synthetic-submitted-password" }),
+		]);
+		expect(message.password).toBe("");
+		expect(guard()).toBe(true);
+		f.stop();
+		expect(guard()).toBe(false);
+		expect(clear).toHaveBeenCalled();
+	});
+	it.each([
+		"replay",
+		"expired",
+		"oversized",
+		"locked",
+		"unpaired",
+	])("rejects %s proposal without retaining password", (change) => {
+		const offer = vi.fn();
+		const clear = vi.fn();
+		const f = fixture({ offer, clear });
+		if (change !== "unpaired") f.pair();
+		const message = proposal();
+		if (change === "replay") {
+			f.receive({ ...message });
+			offer.mockClear();
+		}
+		if (change === "expired") message.expiresAt = Date.now();
+		if (change === "oversized") message.password = "x".repeat(4097);
+		if (change === "locked") f.read.mockReturnValue(null);
+		f.receive(message);
+		expect(offer).not.toHaveBeenCalled();
+		expect(message.password).toBe("");
+	});
 });
 
 describe("companion approval links", () => {

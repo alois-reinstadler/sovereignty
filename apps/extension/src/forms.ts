@@ -1,4 +1,8 @@
-import { normalizeOrigin, REQUEST_TTL_MS } from "@svrgn/extension-protocol";
+import {
+	normalizeOrigin,
+	PROPOSAL_TTL_MS,
+	REQUEST_TTL_MS,
+} from "@svrgn/extension-protocol";
 
 type Candidate = {
 	form: HTMLFormElement;
@@ -56,8 +60,72 @@ function valid(candidate: Candidate, origin: string): boolean {
 /** Handles hold DOM identities, never page-selected selectors. Top document only. */
 export class FormDiscovery {
 	private candidates = new Map<string, Candidate>();
+	private cancelWatch: (() => void) | null = null;
 	clear() {
+		this.cancelWatch?.();
+		this.cancelWatch = null;
 		this.candidates.clear();
+	}
+	clearDiscovery() {
+		this.candidates.clear();
+	}
+	watch(
+		id: string,
+		origin: string,
+		expiresAt: number,
+		onSubmission: (credentials: { username: string; password: string }) => void,
+		isCurrent: () => boolean,
+	): boolean {
+		const candidate = this.candidates.get(id);
+		this.clear();
+		if (
+			!candidate ||
+			!valid(candidate, origin) ||
+			expiresAt <= Date.now() ||
+			expiresAt > Date.now() + PROPOSAL_TTL_MS
+		)
+			return false;
+		candidate.expiresAt = expiresAt;
+		let timer: ReturnType<typeof setTimeout>;
+		const cancel = () => {
+			clearTimeout(timer);
+			candidate.form.removeEventListener("submit", submit, true);
+			if (this.cancelWatch === cancel) this.cancelWatch = null;
+		};
+		const submit = (event: Event) => {
+			cancel();
+			const submitter = event instanceof SubmitEvent ? event.submitter : null;
+			if (
+				submitter?.hasAttribute("formaction") &&
+				normalizeOrigin((submitter as HTMLButtonElement).formAction) !== origin
+			)
+				return;
+			if (
+				event.target !== candidate.form ||
+				!isCurrent() ||
+				!valid(candidate, origin)
+			)
+				return;
+			const credentials = {
+				username: candidate.username.value,
+				password: candidate.password.value,
+			};
+			try {
+				if (
+					credentials.username.length <= 1000 &&
+					credentials.password.length > 0 &&
+					credentials.password.length <= 4096
+				)
+					onSubmission(credentials);
+			} finally {
+				credentials.username = "";
+				credentials.password = "";
+			}
+		};
+		timer = setTimeout(cancel, expiresAt - Date.now());
+		this.cancelWatch = cancel;
+		candidate.form.addEventListener("submit", submit, true);
+		return true;
 	}
 	discover(document: Document, origin: string) {
 		this.clear();

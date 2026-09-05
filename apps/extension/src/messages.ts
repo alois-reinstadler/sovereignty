@@ -10,10 +10,20 @@ export type PopupRequest =
 	| { type: "status" }
 	| { type: "lock" }
 	| { type: "list" }
+	| { type: "watch"; token: string; formId: string }
+	| { type: "review"; token: string }
 	| { type: "pair"; origin: string }
 	| { type: "fill"; token: string; itemId: string; formId: string };
 export type ContentRequest =
 	| { type: "discover"; id: string; origin: string; expiresAt: number }
+	| {
+			type: "watch";
+			id: string;
+			origin: string;
+			expiresAt: number;
+			formId: string;
+			token: string;
+	  }
 	| {
 			type: "fill";
 			id: string;
@@ -24,8 +34,76 @@ export type ContentRequest =
 			password: string;
 	  };
 export type FormChoice = { id: string; label: string };
+export type CandidateMetadata = {
+	token: string;
+	origin: string;
+	username: string;
+	expiresAt: number;
+};
+export function parseCandidateMetadata(
+	value: unknown,
+): CandidateMetadata | null {
+	if (
+		!record(value) ||
+		!keys(value, ["token", "origin", "username", "expiresAt"]) ||
+		!uuid(value.token) ||
+		typeof value.origin !== "string" ||
+		normalizeOrigin(value.origin) !== value.origin ||
+		!textField(value.username, 1000) ||
+		typeof value.expiresAt !== "number" ||
+		!Number.isSafeInteger(value.expiresAt) ||
+		value.expiresAt <= Date.now() ||
+		value.expiresAt > Date.now() + 30_000
+	)
+		return null;
+	return value as CandidateMetadata;
+}
+export type CapturedSubmission = {
+	type: "submitted";
+	token: string;
+	username: string;
+	password: string;
+};
+export function clearPlaintext(value: unknown) {
+	if (value && typeof value === "object") {
+		try {
+			if ("username" in value) value.username = "";
+			if ("password" in value) value.password = "";
+		} catch {
+			/* Serialized messages are mutable; frozen test inputs simply release. */
+		}
+	}
+}
+export function parseCapturedSubmission(
+	value: unknown,
+): CapturedSubmission | null {
+	if (
+		!record(value) ||
+		!keys(value, ["type", "token", "username", "password"]) ||
+		value.type !== "submitted" ||
+		!uuid(value.token) ||
+		!textField(value.username, 1000) ||
+		!textField(value.password, 4096) ||
+		!value.password.length
+	)
+		return null;
+	return value as CapturedSubmission;
+}
 export function parsePopupRequest(value: unknown): PopupRequest | null {
 	if (!record(value)) return null;
+	if (
+		value.type === "review" &&
+		keys(value, ["type", "token"]) &&
+		uuid(value.token)
+	)
+		return value as PopupRequest;
+	if (
+		value.type === "watch" &&
+		keys(value, ["type", "token", "formId"]) &&
+		uuid(value.token) &&
+		uuid(value.formId)
+	)
+		return value as PopupRequest;
 	if (
 		typeof value.type === "string" &&
 		["status", "lock", "list"].includes(value.type) &&
@@ -59,6 +137,13 @@ export function parseContentRequest(value: unknown): ContentRequest | null {
 	)
 		return null;
 	const fields = ["type", "id", "origin", "expiresAt"];
+	if (
+		value.type === "watch" &&
+		keys(value, [...fields, "formId", "token"]) &&
+		uuid(value.formId) &&
+		uuid(value.token)
+	)
+		return value as ContentRequest;
 	if (value.type === "discover" && keys(value, fields))
 		return value as ContentRequest;
 	if (

@@ -11,7 +11,13 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { generatePassword } from "./generator";
-import { type FormChoice, type PopupRequest, parseForms } from "./messages";
+import {
+	type CandidateMetadata,
+	type FormChoice,
+	type PopupRequest,
+	parseCandidateMetadata,
+	parseForms,
+} from "./messages";
 import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
 import "@astryxdesign/theme-neutral/theme.css";
@@ -39,6 +45,7 @@ function Popup() {
 	const [notice, setNotice] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [generated, setGenerated] = useState("");
+	const [candidate, setCandidate] = useState<CandidateMetadata | null>(null);
 	const clearMatches = () => {
 		setItems([]);
 		setForms([]);
@@ -59,6 +66,17 @@ function Popup() {
 					)
 						throw new Error("Invalid state.");
 					setState(String(result.state));
+					if (
+						result.candidate !== null &&
+						result.candidate !== undefined &&
+						!parseCandidateMetadata(result.candidate)
+					)
+						throw new Error("Invalid submission metadata.");
+					setCandidate(
+						result.state === "connected"
+							? parseCandidateMetadata(result.candidate)
+							: null,
+					);
 					if (!originLoaded.current) {
 						setOrigin(result.origin);
 						originLoaded.current = true;
@@ -72,6 +90,7 @@ function Popup() {
 				.catch(() => {
 					if (mounted) {
 						setState("error");
+						setCandidate(null);
 						setError("Extension unavailable. Reopen the popup.");
 					}
 				});
@@ -267,7 +286,52 @@ function Popup() {
 						</li>
 					))}
 				</ul>
+				{token && formId ? (
+					<>
+						<p>
+							To save an entered login, explicitly watch this form’s next
+							submission for 30 seconds. No keystrokes are monitored.
+						</p>
+						<Button
+							label="Watch next submission"
+							isDisabled={busy}
+							onClick={() =>
+								void run(async () => {
+									await send({ type: "watch", token, formId });
+									clearMatches();
+									setNotice(
+										"Watching only the selected form for 30 seconds. Submit it, then reopen Sovereignty to review. A page reload discards the capture.",
+									);
+								})
+							}
+						/>
+					</>
+				) : null}
 			</section>
+			{candidate ? (
+				<section aria-label="Review submitted login">
+					<h2>Review submitted login</h2>
+					<p className="origin">{candidate.origin}</p>
+					<p>{candidate.username || "No username"}</p>
+					<p>
+						Confirm that sign-in succeeded in the vault before saving. The
+						extension cannot verify authentication success.
+					</p>
+					<Button
+						label="Review in vault"
+						isDisabled={busy}
+						onClick={() =>
+							void run(async () => {
+								await send({ type: "review", token: candidate.token });
+								setCandidate(null);
+								setNotice(
+									"Sent to your vault for explicit review. Nothing is saved automatically.",
+								);
+							})
+						}
+					/>
+				</section>
+			) : null}
 			<section aria-labelledby="generator-heading">
 				<div className="row">
 					<h2 id="generator-heading">Password generator</h2>

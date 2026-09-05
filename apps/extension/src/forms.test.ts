@@ -21,6 +21,134 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 describe("form safety", () => {
+	it("rejects an overridden cross-origin submitter action", () => {
+		const discovery = new FormDiscovery();
+		const [choice] = discovery.discover(document, origin);
+		const callback = vi.fn();
+		const button = document.querySelector("button") as HTMLButtonElement;
+		button.setAttribute("formaction", "https://evil.test/");
+		expect(
+			discovery.watch(
+				choice.id,
+				origin,
+				Date.now() + 30000,
+				callback,
+				() => true,
+			),
+		).toBe(true);
+		document.forms[0].dispatchEvent(
+			new SubmitEvent("submit", { bubbles: true, submitter: button }),
+		);
+		expect(callback).not.toHaveBeenCalled();
+	});
+	it("captures only the explicitly watched form once and clears callback plaintext", () => {
+		const discovery = new FormDiscovery();
+		const [form] = discovery.discover(document, origin);
+		const submitted: { username: string; password: string }[] = [];
+		let retained: unknown;
+		(
+			document.querySelector<HTMLInputElement>(
+				"input[type=email]",
+			) as HTMLInputElement
+		).value = "synthetic-user";
+		(
+			document.querySelector<HTMLInputElement>(
+				"input[type=password]",
+			) as HTMLInputElement
+		).value = "synthetic-password";
+		expect(
+			discovery.watch(
+				form.id,
+				origin,
+				Date.now() + 30000,
+				(value) => {
+					submitted.push({ ...value });
+					retained = value;
+				},
+				() => true,
+			),
+		).toBe(true);
+		discovery.clearDiscovery();
+		document.forms[0].dispatchEvent(
+			new Event("submit", { bubbles: true, cancelable: true }),
+		);
+		document.forms[0].dispatchEvent(
+			new Event("submit", { bubbles: true, cancelable: true }),
+		);
+		expect(submitted).toEqual([
+			{ username: "synthetic-user", password: "synthetic-password" },
+		]);
+		expect(retained).toEqual({ username: "", password: "" });
+	});
+	it.each([
+		"replacement",
+		"readonly",
+		"action",
+		"expired",
+		"opaque",
+		"clear",
+		"oversized",
+	])("refuses watched capture after %s", (change) => {
+		const discovery = new FormDiscovery();
+		const [form] = discovery.discover(document, origin);
+		const callback = vi.fn();
+		(
+			document.querySelector<HTMLInputElement>(
+				"input[type=password]",
+			) as HTMLInputElement
+		).value = change === "oversized" ? "x".repeat(4097) : "synthetic-password";
+		expect(
+			discovery.watch(
+				form.id,
+				origin,
+				Date.now() + 30000,
+				callback,
+				() => change !== "opaque",
+			),
+		).toBe(true);
+		if (change === "replacement") document.body.innerHTML = html;
+		if (change === "readonly")
+			document.querySelector("input")?.setAttribute("readonly", "");
+		if (change === "action") document.forms[0].action = "https://evil.test";
+		if (change === "expired")
+			vi.spyOn(Date, "now").mockReturnValue(Date.now() + 30001);
+		if (change === "clear") discovery.clear();
+		document.forms[0].dispatchEvent(
+			new Event("submit", { bubbles: true, cancelable: true }),
+		);
+		expect(callback).not.toHaveBeenCalled();
+		discovery.clear();
+	});
+	it("does not watch another form or let submit trigger fill", () => {
+		document.body.innerHTML = html + html;
+		const discovery = new FormDiscovery();
+		const [first, second] = discovery.discover(document, origin);
+		const callback = vi.fn();
+		expect(
+			discovery.watch(
+				first.id,
+				origin,
+				Date.now() + 30000,
+				callback,
+				() => true,
+			),
+		).toBe(true);
+		document.forms[1].dispatchEvent(new Event("submit", { bubbles: true }));
+		expect(callback).not.toHaveBeenCalled();
+		expect(discovery.fill(second.id, origin, "synthetic", "synthetic")).toBe(
+			false,
+		);
+		expect(
+			discovery.watch(
+				first.id,
+				origin,
+				Date.now() + 30000,
+				callback,
+				() => true,
+			),
+		).toBe(false);
+		discovery.clear();
+	});
 	it("fills one chosen form without submitting and consumes handle", () => {
 		const discovery = new FormDiscovery();
 		const [form] = discovery.discover(document, origin);

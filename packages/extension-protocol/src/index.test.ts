@@ -57,6 +57,28 @@ describe("origin boundaries", () => {
 	});
 });
 describe("messages", () => {
+	it("validates submitted proposal fields and byte bounds", () => {
+		const proposal = {
+			v: 1,
+			type: "proposal",
+			id,
+			origin: "https://example.test",
+			expiresAt: 10000,
+			username: "synthetic",
+			password: "synthetic-password",
+		};
+		expect(parseBackgroundMessage(proposal)).toEqual(proposal);
+		for (const change of [
+			{ origin: null },
+			{ password: "" },
+			{ password: "x".repeat(4097) },
+			{ extra: true },
+			{ id: "bad" },
+			{ username: [] },
+			{ expiresAt: Infinity },
+		])
+			expect(parseBackgroundMessage({ ...proposal, ...change })).toBeNull();
+	});
 	const request = {
 		v: 1,
 		type: "request",
