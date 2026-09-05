@@ -7,9 +7,11 @@ import {
 	TextInput,
 } from "@astryxdesign/core";
 import { type FormEvent, useState } from "react";
-
+import { authDraftForContext } from "#/lib/auth-draft";
+import { IS_DESKTOP } from "#/lib/client-platform";
 import { BackupControls } from "./backup-controls";
 import { Brand } from "./brand";
+import { DesktopStatus } from "./desktop-status";
 
 type AuthScreenProps = {
 	mode: "setup" | "locked";
@@ -20,6 +22,7 @@ type AuthScreenProps = {
 	onImported: () => Promise<void> | void;
 	onRestore?: (password: string) => Promise<void>;
 	backupNotice?: string | null;
+	draftVersion?: number;
 };
 
 export function AuthScreen({
@@ -31,10 +34,24 @@ export function AuthScreen({
 	onImported,
 	onRestore,
 	backupNotice,
+	draftVersion = 0,
 }: AuthScreenProps) {
-	const [password, setPassword] = useState("");
-	const [confirmation, setConfirmation] = useState("");
-	const [showPassword, setShowPassword] = useState(false);
+	const context = `${mode}:${draftVersion}`;
+	const [draft, setDraft] = useState({
+		context,
+		password: "",
+		confirmation: "",
+		showPassword: false,
+	});
+	const current = authDraftForContext(draft, context);
+	// Adjust this component's state during render so stale credentials never commit.
+	// BackupControls stays mounted: an encrypted file chooser/read can finish safely.
+	if (current !== draft) setDraft(current);
+	const { password, confirmation, showPassword } = current;
+	const setPassword = (value: string) =>
+		setDraft({ ...current, password: value });
+	const setConfirmation = (value: string) =>
+		setDraft({ ...current, confirmation: value });
 	const creating = mode === "setup";
 	const passwordTooShort =
 		creating && password.length > 0 && password.length < 12;
@@ -57,6 +74,7 @@ export function AuthScreen({
 			<div className="auth-glow" />
 			<section className="auth-column">
 				<Brand />
+				{IS_DESKTOP ? <DesktopStatus /> : null}
 				<Card className="auth-card" padding={6} elevation="high">
 					<form onSubmit={submit}>
 						<input
@@ -118,7 +136,9 @@ export function AuthScreen({
 									size="sm"
 									isIconOnly
 									icon={<Icon icon={showPassword ? "eyeSlash" : "info"} />}
-									onClick={() => setShowPassword((value) => !value)}
+									onClick={() =>
+										setDraft({ ...current, showPassword: !showPassword })
+									}
 									className="password-toggle"
 								/>
 							</div>
@@ -154,8 +174,9 @@ export function AuthScreen({
 
 							<p className="local-note">
 								<Icon icon="info" size="sm" />
-								Stored as encrypted data. Account sync stays off until you
-								enable it explicitly.
+								{IS_DESKTOP
+									? "Stored as encrypted data in this desktop app. Account sync is unavailable here."
+									: "Stored as encrypted data. Account sync stays off until you enable it explicitly."}
 							</p>
 						</Stack>
 					</form>
@@ -182,9 +203,11 @@ export function AuthScreen({
 						isDisabled={isWorking || password.length === 0}
 					/>
 				) : null}
-				<a className="account-link" href="/account">
-					Sign in for encrypted sync and passkeys
-				</a>
+				{!IS_DESKTOP ? (
+					<a className="account-link" href="/account">
+						Sign in for encrypted sync and passkeys
+					</a>
+				) : null}
 				<p className="preview-label">
 					DEVELOPMENT PREVIEW · NOT AUDITED FOR PRODUCTION USE
 				</p>

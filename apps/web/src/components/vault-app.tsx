@@ -2,6 +2,13 @@ import { Button, Card, Icon, Spinner, TextInput } from "@astryxdesign/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { authClient } from "#/lib/auth-client";
 import { applyChromeCsvImport } from "#/lib/chrome-csv-import";
+import { IS_DESKTOP } from "#/lib/client-platform";
+import { copyForLiveSession } from "#/lib/clipboard-session";
+import {
+	attachDesktopLifecycle,
+	VaultLockQueue,
+} from "#/lib/desktop-lifecycle";
+import { completeDesktopClose } from "#/lib/desktop-native";
 import type {
 	UnlockedVault,
 	VaultDocument,
@@ -28,6 +35,7 @@ import { AuthScreen } from "./auth-screen";
 import { BackupControls } from "./backup-controls";
 import { Brand } from "./brand";
 import { ChromeCsvImport } from "./chrome-csv-import";
+import { DesktopStatus } from "./desktop-status";
 import { ExtensionCompanion } from "./extension-companion";
 import { ItemDetail } from "./item-detail";
 import { ItemForm } from "./item-form";
@@ -43,7 +51,13 @@ interface ClipboardEntry {
 }
 
 export function VaultApp() {
+	return IS_DESKTOP ? <VaultView accountUserId={null} /> : <WebVaultApp />;
+}
+function WebVaultApp() {
 	const accountSession = authClient.useSession();
+	return <VaultView accountUserId={accountSession.data?.user.id ?? null} />;
+}
+function VaultView({ accountUserId }: { accountUserId: string | null }) {
 	const [status, setStatus] = useState<VaultStatus>("loading");
 	const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 	const [document, setDocument] = useState<VaultDocument | null>(null);
@@ -61,6 +75,7 @@ export function VaultApp() {
 	const [backupNotice, setBackupNotice] = useState<string | null>(null);
 	const [autoLockMinutes, setAutoLockMinutes] = useState(5);
 	const [mobileDetail, setMobileDetail] = useState(false);
+	const [authDraftVersion, setAuthDraftVersion] = useState(0);
 	const lastActivity = useRef(Date.now());
 	const searchInput = useRef<HTMLInputElement>(null);
 	const sessionRef = useRef<UnlockedVault | null>(null);
@@ -69,6 +84,9 @@ export function VaultApp() {
 	const persistingRef = useRef(false);
 	const syncingRef = useRef(false);
 	const clipboardEntryRef = useRef<ClipboardEntry | null>(null);
+	const lockQueue = useRef(new VaultLockQueue());
+	const pendingSave = useRef<Promise<void> | null>(null);
+	const pendingAuthentication = useRef<Promise<UnlockedVault> | null>(null);
 
 	const bootstrap = useCallback(() => {
 		setBootstrapError(null);
@@ -116,38 +134,78 @@ export function VaultApp() {
 		}
 	}, []);
 
-	const lock = useCallback(async () => {
-		if (lockingRef.current) return;
-		if (persistingRef.current || syncingRef.current) {
+	const lock = useCallback(async (): Promise<boolean> => {
+		if (!IS_DESKTOP && (persistingRef.current || syncingRef.current)) {
 			setNotice(
 				"Wait for the current save to finish before locking the vault.",
 			);
-			return;
+			return false;
 		}
-		lockingRef.current = true;
-		setIsLocking(true);
-		const unlocked = sessionRef.current;
-		const clipboardEntry = clipboardEntryRef.current;
-		try {
-			await Promise.allSettled([
-				unlocked?.close() ?? Promise.resolve(),
-				clipboardEntry
-					? clearClipboardEntry(clipboardEntry)
-					: Promise.resolve(),
-			]);
-		} finally {
-			sessionRef.current = null;
-			documentRef.current = null;
-			setDocument(null);
-			setSelectedId(null);
-			setEditing(null);
-			setDeleting(null);
-			setStatus("locked");
-			setNotice(null);
-			setIsLocking(false);
-			lockingRef.current = false;
-		}
+		return lockQueue.current.request(
+			() => {
+				setAuthDraftVersion((version) => version + 1);
+				lockingRef.current = true;
+				if (sessionRef.current || pendingAuthentication.current)
+					setIsLocking(true);
+			},
+			async () => {
+				const unlocked = sessionRef.current;
+				const authentication = pendingAuthentication.current;
+				const save = pendingSave.current;
+				const clipboardEntry = clipboardEntryRef.current;
+				let success = true;
+				try {
+					const results = await Promise.allSettled([
+						unlocked?.close() ?? Promise.resolve(),
+						save ?? Promise.resolve(),
+						authentication?.then(
+							(value) => value.close(),
+							() => {},
+						) ?? Promise.resolve(),
+						clipboardEntry
+							? clearClipboardEntry(clipboardEntry)
+							: Promise.resolve(),
+					]);
+					success = results.every((result) => result.status === "fulfilled");
+				} finally {
+					sessionRef.current = null;
+					documentRef.current = null;
+					setDocument(null);
+					setSelectedId(null);
+					setEditing(null);
+					setDeleting(null);
+					try {
+						setStatus(hasStoredVault() ? "locked" : "setup");
+					} catch {
+						setStatus("locked");
+					}
+					setNotice(null);
+					setIsLocking(false);
+					lockingRef.current = false;
+				}
+				if (!success)
+					setError(
+						"The vault was locked, but a pending save failed. The desktop window remains open; check storage and your last encrypted backup.",
+					);
+				return success;
+			},
+		);
 	}, [clearClipboardEntry]);
+	useEffect(
+		() =>
+			attachDesktopLifecycle({
+				enabled: IS_DESKTOP,
+				window,
+				document: globalThis.document,
+				lock: () => lock(),
+				completeClose: completeDesktopClose,
+				onError: () =>
+					setError(
+						"The desktop close could not complete safely. The window remains open; retry after checking storage.",
+					),
+			}),
+		[lock],
+	);
 
 	useEffect(() => {
 		if (status !== "unlocked") return;
@@ -190,13 +248,21 @@ export function VaultApp() {
 	}, [autoLockMinutes, lock, status]);
 
 	const authenticate = async (password: string, create: boolean) => {
+		if (lockingRef.current || pendingAuthentication.current) return;
+		const ticket = lockQueue.current.ticket();
 		setIsWorking(true);
 		setError(null);
 		setBackupNotice(null);
 		try {
-			const unlocked = create
-				? await createLocalVault(password)
-				: await unlockLocalVault(password);
+			const operation = create
+				? createLocalVault(password)
+				: unlockLocalVault(password);
+			pendingAuthentication.current = operation;
+			const unlocked = await operation;
+			if (!lockQueue.current.current(ticket) || lockingRef.current) {
+				await unlocked.close();
+				return;
+			}
 			sessionRef.current = unlocked;
 			documentRef.current = unlocked.document;
 			setDocument(unlocked.document);
@@ -209,12 +275,13 @@ export function VaultApp() {
 					: "An unexpected error occurred.",
 			);
 		} finally {
+			pendingAuthentication.current = null;
 			setIsWorking(false);
 		}
 	};
 
 	const restoreFromSync = async (password: string) => {
-		const userId = accountSession.data?.user.id;
+		const userId = IS_DESKTOP ? null : accountUserId;
 		if (!userId) {
 			setError("Sign in to your Sovereignty account before restoring sync.");
 			return;
@@ -295,7 +362,10 @@ export function VaultApp() {
 		persistingRef.current = true;
 		setIsPersisting(true);
 		try {
-			await saveLocalVault(unlocked, next);
+			const operation = saveLocalVault(unlocked, next);
+			pendingSave.current = operation;
+			await operation;
+			if (lockingRef.current) return true;
 			documentRef.current = next;
 			setDocument(next);
 			return true;
@@ -305,6 +375,7 @@ export function VaultApp() {
 			);
 			return false;
 		} finally {
+			pendingSave.current = null;
 			persistingRef.current = false;
 			setIsPersisting(false);
 		}
@@ -329,8 +400,20 @@ export function VaultApp() {
 
 	const copy = async (value: string, label: string) => {
 		if (lockingRef.current) return;
+		const ticket = lockQueue.current.ticket();
+		const issuingSession = sessionRef.current;
 		try {
-			await navigator.clipboard.writeText(value);
+			const result = await copyForLiveSession(
+				value,
+				navigator.clipboard,
+				() =>
+					!lockingRef.current &&
+					Boolean(issuingSession) &&
+					sessionRef.current === issuingSession &&
+					lockQueue.current.current(ticket),
+			);
+			if (result === "revoked") return;
+			if (result === "blocked") throw new Error("Clipboard unavailable.");
 			const previous = clipboardEntryRef.current;
 			if (previous) window.clearTimeout(previous.timer);
 			const entry: ClipboardEntry = { value, timer: 0 };
@@ -392,6 +475,7 @@ export function VaultApp() {
 	if (status === "setup" || status === "locked") {
 		return (
 			<AuthScreen
+				draftVersion={authDraftVersion}
 				mode={status}
 				isWorking={isWorking}
 				error={error}
@@ -399,7 +483,7 @@ export function VaultApp() {
 				onUnlock={(password) => authenticate(password, false)}
 				onImported={finishBackupImport}
 				onRestore={
-					status === "setup" && accountSession.data
+					status === "setup" && accountUserId && !IS_DESKTOP
 						? restoreFromSync
 						: undefined
 				}
@@ -412,18 +496,20 @@ export function VaultApp() {
 
 	return (
 		<main className="vault-shell">
-			<ExtensionCompanion
-				persist={persist}
-				readItems={() => {
-					if (
-						lockingRef.current ||
-						!sessionRef.current ||
-						Date.now() - lastActivity.current >= autoLockMinutes * 60_000
-					)
-						return null;
-					return documentRef.current?.items ?? null;
-				}}
-			/>
+			{!IS_DESKTOP ? (
+				<ExtensionCompanion
+					persist={persist}
+					readItems={() => {
+						if (
+							lockingRef.current ||
+							!sessionRef.current ||
+							Date.now() - lastActivity.current >= autoLockMinutes * 60_000
+						)
+							return null;
+						return documentRef.current?.items ?? null;
+					}}
+				/>
+			) : null}
 			<aside className="vault-nav">
 				<div className="nav-brand-row">
 					<Brand />
@@ -484,28 +570,34 @@ export function VaultApp() {
 						)
 					}
 				/>
-				<SyncControls
-					vault={sessionRef.current as UnlockedVault}
-					document={document}
-					disabled={isLocking || isPersisting || isSyncing}
-					onWorkingChange={(working) => {
-						syncingRef.current = working;
-						setIsSyncing(working);
-					}}
-					onDocument={(next) => {
-						documentRef.current = next;
-						setDocument(next);
-					}}
-				/>
-				<a className="account-link nav-account-link" href="/account">
-					Account &amp; passkeys
-				</a>
+				{IS_DESKTOP ? (
+					<DesktopStatus />
+				) : (
+					<SyncControls
+						vault={sessionRef.current as UnlockedVault}
+						document={document}
+						disabled={isLocking || isPersisting || isSyncing}
+						onWorkingChange={(working) => {
+							syncingRef.current = working;
+							setIsSyncing(working);
+						}}
+						onDocument={(next) => {
+							documentRef.current = next;
+							setDocument(next);
+						}}
+					/>
+				)}
+				{!IS_DESKTOP ? (
+					<a className="account-link nav-account-link" href="/account">
+						Account &amp; passkeys
+					</a>
+				) : null}
 				<Button
 					label="Lock vault"
 					variant="ghost"
 					icon={<span>⌁</span>}
 					onClick={() => void lock()}
-					isDisabled={isLocking || isPersisting || isSyncing}
+					isDisabled={isLocking || (!IS_DESKTOP && (isPersisting || isSyncing))}
 					width="100%"
 				/>
 			</aside>

@@ -1,6 +1,6 @@
 import { Badge, Button, Card, EmptyState, Icon } from "@astryxdesign/core";
 import { useState } from "react";
-
+import { IS_DESKTOP } from "#/lib/client-platform";
 import type { VaultItem } from "#/lib/models";
 
 type ItemDetailProps = {
@@ -179,7 +179,7 @@ function SecretRow({
 		<div className="secret-row">
 			<div>
 				<span>{label}</span>
-				{link ? (
+				{link && !IS_DESKTOP ? (
 					<a
 						href={link.startsWith("http") ? link : `https://${link}`}
 						target="_blank"

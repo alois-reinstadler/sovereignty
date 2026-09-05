@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-complete-close"
+description = "Acknowledge a pending native close only after the local vault has finished locking."
+commands.allow = ["desktop_close_ready"]

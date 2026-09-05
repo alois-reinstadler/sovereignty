@@ -1,74 +1,127 @@
 # Sovereignty Desktop
 
-This package wraps the shared `@svrgn/web` TanStack Start SPA in a Tauri 2
-desktop window. It does not load remote application content and grants the
-webview no native capabilities yet.
+The Tauri 2 desktop development client bundles the shared TanStack Start/Astryx
+vault UI in an explicit local mode. It creates and unlocks the same encrypted
+vault format, supports login CRUD, search, favorites, generation and clipboard
+handling, and imports/exports encrypted `.svrgn` backups. Existing `@svrgn/*`
+identifiers, storage keys, encrypted formats and protocol versions are unchanged.
 
-## Prerequisites
+This client is unaudited. Use invented credentials only. Successful compilation
+does not establish production readiness or replace independent security review.
 
-- Node.js and pnpm 11.24.0
-- Rust stable with Cargo
-- The platform dependencies from the
-  [Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/)
+## Prerequisites and commands
 
-Install JavaScript dependencies once from the repository root:
+Use Node.js 24+, pnpm 11.24.0, Rust stable and the platform packages listed in
+the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). Install with
+`pnpm install --frozen-lockfile`; the flag rejects dependency drift.
 
-```bash
-pnpm install
-```
+From the repository root:
 
-## Development
-
-From the repository root, run:
-
-```bash
+```sh
 pnpm --filter @svrgn/desktop dev
+pnpm --filter @svrgn/desktop build:web
+pnpm --filter @svrgn/desktop tauri build --debug --no-bundle --no-sign
+pnpm --filter @svrgn/desktop info
 ```
 
-Tauri starts the shared web app on `127.0.0.1:1420` and opens it in the native
-window. The loopback-only binding keeps the development server off the LAN.
+`--filter` selects the desktop workspace. `dev` starts Vite on the explicitly
+configured loopback address `127.0.0.1:1420` and opens Tauri. `build:web` builds the
+desktop target without Rust and verifies that `apps/web/dist/client/index.html`
+has a module entry. The native command builds an unsigned development executable:
+`--debug` selects the debug profile, `--no-bundle` omits installers, and `--no-sign`
+disables signing. `info` reports tools; its exit code does not prove prerequisites
+exist. Do not sign, notarize or publish without explicit approval.
 
-## Production build
+`scripts/web.mjs` sets `VITE_SVRGN_CLIENT=desktop` for native build and dev. Tauri
+bundles only static `apps/web/dist/client` files, never the SSR server. Ordinary
+web build/dev retains the full web client. Both targets currently use the same
+output directory; run `build:web` last when inspecting native assets.
 
-From the repository root, run:
+For browser verification in the container, use the managed preview workflow:
 
-```bash
-pnpm --filter @svrgn/desktop build
+```sh
+dev-preview start sovereignty-desktop-main -- pnpm --filter @svrgn/desktop dev:web --host '{host}' --port '{port}' --strictPort
 ```
 
-The build command first builds `@svrgn/web`, then bundles its static
-`apps/web/dist/client` output. The web build must emit `index.html` at that
-location (its TanStack Start SPA shell output is configured accordingly).
+The manager substitutes its allocated host and port; `--strictPort` refuses
+collisions. Open its reported localhost URL in shared Chrome and provide its
+tailnet URL to users. Keep the main web preview running. This checks the desktop
+web target, not native webview or OS behavior.
 
-To inspect the installed Tauri, Rust, and platform dependency versions, run:
+## Explicit local boundary
 
-```bash
-pnpm --filter @svrgn/desktop run info
-```
+Desktop startup never mounts the account-session hook. Account, passkey, sync,
+account restoration and extension companion components are unavailable, with an
+English explanation on the local-vault screen and direct `/account` route. The
+desktop app does not call nonexistent `/api/auth` or `/api/sync` endpoints. A future
+reviewed self-hosted server transport is required; adding a CSP origin alone is
+insufficient.
 
-No filesystem, shell, dialog, opener, network-native, or other Tauri plugin is
-enabled. Future native features should add a narrowly scoped permission to the
-`main` capability instead of enabling a broad default capability.
+The vault persists encrypted in native webview local storage. No master password,
+vault key, plaintext record or device-unlock material is saved through native
+APIs. Development and bundled origins have separate browser storage; use an
+encrypted backup to move a test vault between them. OS secure unlock is not
+configured. Do not claim Keychain or hardware protection for this storage.
 
-## Verification and remaining boundary
+Website values remain copyable text. Native navigation permits only bundled
+`tauri://localhost` or `http://tauri.localhost` authorities and the exact loopback
+development origin in Tauri dev builds. New windows are denied. Remote documents,
+external links, lookalikes, embedded credentials, arbitrary ports, `file:` and
+`data:` navigation are refused. There is no opener/shell fallback or remote webview.
 
-This remains a scaffold, not a verified desktop client. On the development
-container, `pnpm --filter @svrgn/desktop run info` reports missing Rust, Cargo,
-WebKitGTK 4.1 and librsvg. The command exits successfully despite those missing
-prerequisites; its exit code is not evidence that a native build works. No Linux
-or macOS binary has been built or launched in this session.
+## Locking and native privileges
 
-The bundled UI has no application server. Account and sync endpoints therefore
-need an explicit self-hosted server transport before they can work in the native
-client; broadening CSP alone would not implement that transport. Device unlock
-material has no native persistence yet. A future Keychain integration must keep
-device-local wrapping material separate from the master password, require an
-explicit opt-in, revoke access on lock, and test locked-device failures.
+Window focus loss, hidden visibility, native focus loss, manual lock, inactivity
+and native close revoke unlocked UI access. Rust dispatches only a fixed
+`svrgn:desktop-lock` custom event with `native-blur` or `native-close`; no user text
+is evaluated. Tests can listen to that event before a real OS action to prove that
+the native notification reached JavaScript.
 
-The Chromium companion currently pairs with a browser vault tab through
-`chrome.runtime.connect`. A Tauri webview cannot impersonate that browser tab.
-Native messaging would require a separate, authenticated host protocol and an
-explicitly installed host manifest; no localhost credential bridge is enabled.
-Keep native implementation behind verification of the existing browser boundary.
-macOS signing, distribution and iOS credential-provider entitlements remain
-external release steps and are not configured or published here.
+Locks invalidate in-progress key derivation and clear master-password,
+confirmation and reveal drafts even while locked or creating a vault. The
+credential form resets without unmounting the encrypted backup picker on an
+already locked screen. Import while locked to keep file selection and overwrite
+confirmation stable. Import from an unlocked screen may be interrupted by the
+mandatory focus-loss lock; reopen Import backup from the locked screen if needed.
+
+A lock during encryption immediately hides secret UI and denies new reads,
+copies or saves. Key closure queues behind the started write. A clipboard write
+finishing after revocation creates no retained entry; clearing the issued value is
+attempted without overwriting another application's contents. Clipboard erasure
+is browser/OS best-effort; JavaScript cannot guarantee memory zeroization.
+
+The native close button and application Quit are intercepted. The only native
+command, `desktop_close_ready`, acknowledges a pending close after vault locking.
+The `allow-complete-close` capability is restricted to local `main`; an explicit
+app command manifest enables permission enforcement. Rust rejects unsolicited,
+wrong-window and duplicate acknowledgements. No broad core defaults, filesystem,
+shell, dialog, opener, network, secure-storage or key commands are enabled. CSP
+keeps scripts local and includes only `wasm-unsafe-eval` for existing libsodium
+WebAssembly, not JavaScript `unsafe-eval`; IPC retains narrow transport origins.
+
+Failed save/closure/acknowledgement leaves the window open. There is no timeout
+that forcibly destroys an in-flight write. Retry after checking storage and the
+last durable backup. OS force-kill, power loss or a crashed webview cannot be made
+transactional by this handshake. If the frontend cannot acknowledge, the window
+stays open instead of claiming its save completed safely.
+
+## Verification and next milestones
+
+Shared-client tests cover desktop/web session isolation, events and cleanup,
+queued closure, late unlock refusal, auth draft revocation and clipboard races.
+Existing crypto adapter tests cover write ordering and closing after successful
+and failed saves. Rust tests cover exact navigation and single-use close approval.
+
+This container lacks Rust/native WebKit prerequisites. The implementation agent
+verified JavaScript tests, typing, formatting and desktop static assets locally.
+Unsigned Linux/macOS builds and real Linux WebKit checks run separately in CI;
+consult their results for the exact tested commit. Do not infer native runtime
+verification from `info` or a Chrome preview. macOS needs runtime review in addition
+to compilation.
+
+Desktop/macOS now precedes Expo/iOS. Next: verify native boundaries, implement
+explicit device-local unlock without weakening the master-password boundary, then
+create an Expo workspace sharing schemas and deterministic protocol vectors.
+Keychain/Secure Enclave and credential-provider work need platform-specific code.
+Extension integration is paused and does not gate this desktop slice. No signing,
+notarization, Apple enrollment or store publication is included.

@@ -1,19 +1,21 @@
 {
-  "name": "@svrgn/desktop",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "packageManager": "pnpm@11.24.0",
-  "scripts": {
-    "build": "tauri build",
-    "dev": "tauri dev",
-    "info": "tauri info",
-    "tauri": "tauri"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "2.11.1"
-  },
-  "devDependencies": {
-    "@tauri-apps/cli": "2.11.4"
-  }
+	"name": "@svrgn/desktop",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"packageManager": "pnpm@11.24.0",
+	"scripts": {
+		"build:web": "node scripts/web.mjs build",
+		"dev:web": "node scripts/web.mjs dev",
+		"build": "tauri build --no-bundle --no-sign",
+		"dev": "tauri dev",
+		"info": "tauri info",
+		"tauri": "tauri"
+	},
+	"dependencies": {
+		"@tauri-apps/api": "2.11.1"
+	},
+	"devDependencies": {
+		"@tauri-apps/cli": "2.11.4"
+	}
 }
