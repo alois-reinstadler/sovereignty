@@ -162,6 +162,9 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 .companion-overlay { position: fixed; z-index: 90; right: 24px; top: 24px; width: min(420px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; }
 .companion-card { background: #14201c !important; border: 1px solid #436654 !important; box-shadow: 0 18px 50px #0008; }
 .companion-card h2 { margin: 10px 0; font-size: 20px; }
+.companion-card label { display: block; margin: 12px 0 6px; font-size: 12px; }
+.companion-card select { display: block; width: 100%; min-height: 36px; padding: 6px 10px; color: #dcebe4; background: #1d2b25; border: 1px solid #436654; border-radius: 6px; }
+.companion-card section p { overflow-wrap: anywhere; }
 .companion-card p { margin: 12px 0; color: #bbc9c2; font-size: 12px; line-height: 1.6; }
 .companion-card .preview-label { margin: 12px 0; font-size: 10px; }
 .companion-card output { display: block; margin: 12px 0; font-size: 12px; line-height: 1.6; }

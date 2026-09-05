@@ -32,8 +32,11 @@ exact-origin metadata matching, user-initiated filling into selected top-level
 forms, a popup password generator, and reproducible ZIP packaging. Its pairing
 session and plaintext are memory-only; restarting the worker or locking the vault
 revokes authorization. See [the extension boundary](./docs/EXTENSION.md).
-Save/update review, wider field support, and a Firefox transport remain follow-up
-work. Native browser integration and independent auditing remain release gates.
+Explicit create/update review is implemented for opted-in submissions that keep
+their document alive. Navigation discards capture, and the user must confirm
+sign-in success before saving. Navigating-form capture, wider field support and
+a Firefox transport remain follow-up work. Installed-browser integration and
+independent auditing remain release gates.
 
 Build WebExtension clients for Chromium and Firefox with safe URL matching,
 autofill, save/update prompts, password generation, and communication with the

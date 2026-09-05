@@ -16,11 +16,28 @@ document.getElementById("disable")?.addEventListener("click", () => {
 		.querySelector('#primary input[type="password"]')
 		?.setAttribute("readonly", "");
 });
-// Browser verification API exercises the actual module, never accepts real credentials.
+// Browser verification exercises the actual module; capture retains only test assertions.
 const discovery = new FormDiscovery();
+let submissions = 0;
+let matchedSyntheticCredentials = false;
 Object.assign(window, {
 	sovereigntyFixture: {
 		discover: () => discovery.discover(document, location.origin),
+		watch: (id: string) =>
+			discovery.watch(
+				id,
+				location.origin,
+				Date.now() + 30_000,
+				(value) => {
+					submissions += 1;
+					matchedSyntheticCredentials =
+						value.username === "synthetic-user" &&
+						value.password === "synthetic-password-only";
+				},
+				() => true,
+			),
+		captureResult: () => ({ submissions, matchedSyntheticCredentials }),
+		cancel: () => discovery.clear(),
 		fill: (id: string) =>
 			discovery.fill(
 				id,

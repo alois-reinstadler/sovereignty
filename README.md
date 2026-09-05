@@ -23,6 +23,7 @@ Start web app. A Tauri desktop shell is included for the later native-client mil
 - TanStack Start web application using Astryx
 - Chromium Manifest V3 companion with explicit pairing and origin-bound filling
 - Extension password generator, form selection, and reproducible ZIP packaging
+- Explicit submitted-login create/update review for forms that keep their document open
 - Tauri 2 desktop packaging scaffold
 
 The extension is an unaudited development slice; see its permissions, installation,
@@ -52,6 +53,7 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm build:extension
+pnpm --filter @svrgn/extension verify:package
 pnpm routes:check
 pnpm audit:high
 ```
@@ -59,6 +61,11 @@ pnpm audit:high
 Build the native desktop package separately with `pnpm build:desktop` after
 installing Rust and the platform dependencies listed in
 [`apps/desktop/README.md`](./apps/desktop/README.md).
+
+`--filter` selects the extension workspace; `verify:package` rebuilds twice and
+compares ZIP hashes. Run `pnpm test:postgres` separately on a Docker-enabled host
+for the isolated real-database suite. Ordinary tests report its skipped cases
+explicitly; see [docs/POSTGRES_INTEGRATION.md](./docs/POSTGRES_INTEGRATION.md).
 
 ## Principles
 
