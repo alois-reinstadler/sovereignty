@@ -261,7 +261,7 @@ function Unlocked({ controller }: { controller: VaultController }) {
 									disabled={state.busy}
 									danger
 									onPress={() => {
-										const snapshot = controller.getState();
+										const remove = controller.prepareRemoval(item.id);
 										Alert.alert(
 											"Delete login?",
 											"The next encrypted snapshot will no longer contain this login. Earlier encrypted snapshots remain on this device.",
@@ -270,10 +270,7 @@ function Unlocked({ controller }: { controller: VaultController }) {
 												{
 													text: "Delete",
 													style: "destructive",
-													onPress: () => {
-														if (controller.getState() === snapshot)
-															void controller.remove(item.id);
-													},
+													onPress: remove,
 												},
 											],
 										);

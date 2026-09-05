@@ -61,6 +61,33 @@ function setup(existing = false) {
 }
 const item = { ...protocolVectors.v1.document.items[0] };
 describe("mobile plaintext ownership", () => {
+	it("revokes a pending native deletion callback across lock and re-unlock", async () => {
+		const { controller, gate, store } = setup(true);
+		gate.resolve();
+		await controller.initialize();
+		await controller.authenticate("synthetic", false);
+		await controller.save(item, true);
+		const remove = controller.prepareRemoval(item.id);
+		controller.lock();
+		await controller.authenticate("synthetic", false);
+		await controller.save(item, true);
+		vi.mocked(store.write).mockClear();
+		expect(await remove()).toBe(false);
+		expect(controller.getState().items).toHaveLength(1);
+		expect(store.write).not.toHaveBeenCalled();
+	});
+	it("allows a current deletion but rejects one after another state change", async () => {
+		const { controller, gate } = setup(true);
+		gate.resolve();
+		await controller.initialize();
+		await controller.authenticate("synthetic", false);
+		await controller.save(item, true);
+		const stale = controller.prepareRemoval(item.id);
+		await controller.save({ ...item, title: "Updated synthetic login" }, false);
+		expect(await stale()).toBe(false);
+		expect(await controller.prepareRemoval(item.id)()).toBe(true);
+		expect(controller.getState().items).toEqual([]);
+	});
 	it("revokes a created session while encrypted publication is pending and refuses late unlock", async () => {
 		const { controller, vault, gate } = setup();
 		await controller.initialize();

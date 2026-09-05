@@ -30,6 +30,30 @@ function setup() {
 	return { data, io, store: new JournalStore(io) };
 }
 describe("encrypted journal publication", () => {
+	it("keeps the latest snapshot readable at capacity and refuses a new file", async () => {
+		const { store, data, io } = setup();
+		const serialized = JSON.stringify(envelope());
+		for (let sequence = 1; sequence <= 2000; sequence++)
+			data.set(`vault-${String(sequence).padStart(12, "0")}.svrgn`, serialized);
+		expect(await store.load()).toEqual(envelope());
+		await expect(store.write(envelope())).rejects.toThrow("journal limit");
+		expect(data.size).toBe(2000);
+		expect(io.publish).not.toHaveBeenCalled();
+		expect(await new JournalStore(io).load()).toEqual(envelope());
+	});
+	it("does not let failed pending files or an older over-limit journal prevent reading", async () => {
+		const { store, data, io } = setup();
+		data.set("vault-000000000001.svrgn", JSON.stringify(envelope()));
+		for (let sequence = 2; sequence <= 2002; sequence++)
+			data.set(
+				`vault-${String(sequence).padStart(12, "0")}.svrgn.pending`,
+				"partial ciphertext",
+			);
+		expect(await store.load()).toEqual(envelope());
+		await expect(store.write(envelope())).rejects.toThrow("journal limit");
+		expect(data.size).toBe(2002);
+		expect(io.publish).not.toHaveBeenCalled();
+	});
 	it("requires reading existing state and writes only an encrypted envelope", async () => {
 		const { store, data } = setup();
 		await expect(store.write(envelope())).rejects.toThrow("Read existing");

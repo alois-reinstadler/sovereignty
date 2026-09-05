@@ -24,9 +24,9 @@ export class JournalStore implements EncryptedStore {
 	private initialized = false;
 	private queue: Promise<void> = Promise.resolve();
 	constructor(private readonly files: EncryptedFiles) {}
-	private entries() {
+	private entries(writing = false) {
 		const entries = this.files.list();
-		if (entries.length > 2000)
+		if (writing && entries.length >= 2000)
 			throw new Error(
 				"Local vault journal limit reached; preserve and archive encrypted snapshots before continuing",
 			);
@@ -55,7 +55,7 @@ export class JournalStore implements EncryptedStore {
 		const task = this.queue.then(async () => {
 			if (!this.initialized)
 				throw new Error("Read existing vault state before writing");
-			const latest = this.entries().at(-1);
+			const latest = this.entries(true).at(-1);
 			if ((latest ? Number(latest.slice(6, 18)) : 0) !== this.publishedSequence)
 				throw new Error(
 					"Encrypted storage changed externally; reload before writing",

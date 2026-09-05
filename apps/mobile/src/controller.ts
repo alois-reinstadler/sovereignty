@@ -17,6 +17,7 @@ export interface VaultState {
 }
 export class VaultController {
 	private epoch = 0;
+	private stateVersion = 0;
 	private active = true;
 	private envelope: EncryptedVaultEnvelope | null = null;
 	private session: VaultSession | null = null;
@@ -43,6 +44,7 @@ export class VaultController {
 		};
 	};
 	private update(patch: Partial<VaultState>) {
+		this.stateVersion++;
 		this.state = { ...this.state, ...patch };
 		for (const listener of this.listeners) listener();
 	}
@@ -155,6 +157,15 @@ export class VaultController {
 				throw new Error("Login no longer exists");
 			return items.filter((item) => item.id !== id);
 		});
+	}
+	/** Native dialogs may outlive locking. Retain only a nonsecret ID and counters. */
+	prepareRemoval(id: string) {
+		const epoch = this.epoch;
+		const version = this.stateVersion;
+		return () =>
+			epoch === this.epoch && version === this.stateVersion
+				? this.remove(id)
+				: Promise.resolve(false);
 	}
 	private async mutate(
 		change: (items: readonly VaultItem[]) => readonly VaultItem[],
