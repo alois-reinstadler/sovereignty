@@ -12,12 +12,75 @@ const validEnvironment = {
 };
 
 describe("server environment", () => {
+	it.each(["development", "test"])("defaults %s signup to open", (NODE_ENV) => {
+		expect(
+			parseServerEnvironment({ ...validEnvironment, NODE_ENV }).signupMode,
+		).toBe("open");
+	});
+	it.each([
+		"closed",
+		"invite-only",
+		"open",
+	])("supports explicit %s mode", (SIGNUP_MODE) => {
+		expect(
+			parseServerEnvironment({ ...validEnvironment, SIGNUP_MODE }).signupMode,
+		).toBe(SIGNUP_MODE);
+	});
+	it("normalizes invitation email and parses expiry", () => {
+		expect(
+			parseServerEnvironment({
+				...validEnvironment,
+				SIGNUP_INVITATIONS: JSON.stringify([
+					{
+						email: " Invited@Example.test ",
+						tokenHash: "ab".repeat(32),
+						expiresAt: "2026-09-06T00:00:00.000Z",
+					},
+				]),
+			}).signupInvitations,
+		).toEqual([
+			{
+				email: "invited@example.test",
+				tokenHash: "ab".repeat(32),
+				expiresAt: Date.parse("2026-09-06T00:00:00.000Z"),
+			},
+		]);
+	});
+	it.each([
+		"{",
+		"{}",
+		"[null]",
+		"x".repeat(256_001),
+		JSON.stringify([
+			{ email: "no-email", tokenHash: "secret", expiresAt: "tomorrow" },
+		]),
+		JSON.stringify(
+			Array(2).fill({
+				email: "invited@example.test",
+				tokenHash: "ab".repeat(32),
+				expiresAt: "2026-09-06T00:00:00.000Z",
+			}),
+		),
+	])("rejects invalid invitations without echoing their contents", (SIGNUP_INVITATIONS) => {
+		expect(() =>
+			parseServerEnvironment({ ...validEnvironment, SIGNUP_INVITATIONS }),
+		).toThrow(
+			"SIGNUP_INVITATIONS must be a JSON array of unique email, SHA-256 tokenHash, and expiresAt entries",
+		);
+	});
+	it("rejects an invalid mode", () => {
+		expect(() =>
+			parseServerEnvironment({ ...validEnvironment, SIGNUP_MODE: "enabled" }),
+		).toThrow(ServerEnvironmentError);
+	});
 	it("parses exact trusted origins", () => {
 		expect(parseServerEnvironment(validEnvironment)).toEqual({
 			betterAuthSecret: validEnvironment.BETTER_AUTH_SECRET,
 			betterAuthUrl: "https://vault.example.test",
 			databaseUrl: validEnvironment.DATABASE_URL,
 			nodeEnv: "production",
+			signupMode: "closed",
+			signupInvitations: [],
 			passkeyOrigins: ["https://vault.example.test"],
 			passkeyRpId: "vault.example.test",
 			trustedOrigins: [

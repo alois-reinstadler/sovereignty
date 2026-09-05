@@ -6,6 +6,14 @@ export interface ServerEnvironment {
 	readonly passkeyOrigins: ReadonlyArray<string>;
 	readonly passkeyRpId: string;
 	readonly trustedOrigins: ReadonlyArray<string>;
+	readonly signupMode: "closed" | "invite-only" | "open";
+	readonly signupInvitations: ReadonlyArray<SignupInvitation>;
+}
+
+export interface SignupInvitation {
+	readonly email: string;
+	readonly tokenHash: string;
+	readonly expiresAt: number;
 }
 
 export class ServerEnvironmentError extends Error {
@@ -79,6 +87,19 @@ export const parseServerEnvironment = (
 	}
 
 	const databaseUrl = required(source, "DATABASE_URL");
+	const signupMode =
+		source.SIGNUP_MODE?.trim() ||
+		(nodeEnv === "production" ? "closed" : "open");
+	if (
+		signupMode !== "closed" &&
+		signupMode !== "invite-only" &&
+		signupMode !== "open"
+	) {
+		throw new ServerEnvironmentError(
+			"SIGNUP_MODE must be closed, invite-only, or open",
+		);
+	}
+	const signupInvitations = parseSignupInvitations(source.SIGNUP_INVITATIONS);
 	let databaseProtocol: string;
 	try {
 		databaseProtocol = new URL(databaseUrl).protocol;
@@ -154,7 +175,57 @@ export const parseServerEnvironment = (
 		passkeyOrigins,
 		passkeyRpId,
 		trustedOrigins,
+		signupMode,
+		signupInvitations,
 	};
+};
+
+const parseSignupInvitations = (
+	raw: string | undefined,
+): ReadonlyArray<SignupInvitation> => {
+	if (!raw?.trim()) return [];
+	const fail = (): never => {
+		throw new ServerEnvironmentError(
+			"SIGNUP_INVITATIONS must be a JSON array of unique email, SHA-256 tokenHash, and expiresAt entries",
+		);
+	};
+	if (raw.length > 256_000) return fail();
+	let entries: unknown;
+	try {
+		entries = JSON.parse(raw);
+	} catch {
+		return fail();
+	}
+	if (!Array.isArray(entries) || entries.length > 1_000) return fail();
+	const emails = new Set<string>();
+	const hashes = new Set<string>();
+	return entries.map((entry: unknown) => {
+		if (!entry || typeof entry !== "object" || Array.isArray(entry))
+			return fail();
+		const item = entry as Record<string, unknown>;
+		if (
+			Object.keys(item).sort().join(",") !== "email,expiresAt,tokenHash" ||
+			typeof item.email !== "string" ||
+			typeof item.tokenHash !== "string" ||
+			typeof item.expiresAt !== "string"
+		)
+			return fail();
+		const email = item.email.trim().toLowerCase();
+		const expiresAt = Date.parse(item.expiresAt);
+		if (
+			email.length > 254 ||
+			!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+			!/^[a-f0-9]{64}$/.test(item.tokenHash) ||
+			!Number.isFinite(expiresAt) ||
+			new Date(expiresAt).toISOString() !== item.expiresAt ||
+			emails.has(email) ||
+			hashes.has(item.tokenHash)
+		)
+			return fail();
+		emails.add(email);
+		hashes.add(item.tokenHash);
+		return { email, tokenHash: item.tokenHash, expiresAt };
+	});
 };
 
 let cachedEnvironment: ServerEnvironment | undefined;

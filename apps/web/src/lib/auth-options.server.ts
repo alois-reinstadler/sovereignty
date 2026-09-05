@@ -4,6 +4,7 @@ import { tanstackStartCookies } from "better-auth/tanstack-start";
 import type { Pool } from "pg";
 
 import type { ServerEnvironment } from "./server-env";
+import { assertSignupAllowed } from "./signup-policy.server";
 
 export const assertPasskeyUserVerified = (userVerified: boolean): void => {
 	if (!userVerified) {
@@ -26,8 +27,25 @@ export const buildAuthOptions = (
 	trustedOrigins: [...environment.trustedOrigins],
 	emailAndPassword: {
 		enabled: true,
+		disableSignUp: environment.signupMode === "closed",
 		minPasswordLength: 12,
 		maxPasswordLength: 128,
+	},
+	databaseHooks: {
+		user: {
+			create: {
+				before: async (user, context) => {
+					assertSignupAllowed(
+						environment,
+						user.email,
+						(context?.request?.headers ?? context?.headers)?.get(
+							"x-sovereignty-invite",
+						),
+						context?.path,
+					);
+				},
+			},
+		},
 	},
 	rateLimit: {
 		enabled: true,

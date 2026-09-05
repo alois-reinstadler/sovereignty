@@ -191,6 +191,7 @@ export function AccountScreen() {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmation, setConfirmation] = useState("");
+	const [invitation, setInvitation] = useState("");
 	const [working, setWorking] = useState<
 		"password" | "passkey" | "sign-out" | null
 	>(null);
@@ -212,6 +213,11 @@ export function AccountScreen() {
 							email: email.trim(),
 							name: name.trim(),
 							password,
+							fetchOptions: {
+								headers: invitation.trim()
+									? { "x-sovereignty-invite": invitation.trim() }
+									: {},
+							},
 						})
 					: await authClient.signIn.email({ email: email.trim(), password });
 			if (result.error) {
@@ -231,6 +237,7 @@ export function AccountScreen() {
 		} catch {
 			setError("The account server could not be reached. Try again later.");
 		} finally {
+			setInvitation("");
 			setWorking(null);
 		}
 	};
@@ -403,6 +410,17 @@ export function AccountScreen() {
 										width="100%"
 									/>
 								) : null}
+								{mode === "sign-up" ? (
+									<TextInput
+										label="Invitation code (if required by your operator)"
+										type="password"
+										{...{ autoComplete: "off", maxLength: 64 }}
+										htmlName="invitation-code"
+										value={invitation}
+										onChange={setInvitation}
+										width="100%"
+									/>
+								) : null}
 								<Button
 									label={mode === "sign-up" ? "Create account" : "Sign in"}
 									variant="primary"
@@ -433,6 +451,7 @@ export function AccountScreen() {
 											current === "sign-in" ? "sign-up" : "sign-in",
 										);
 										setError(null);
+										setInvitation("");
 									}}
 								>
 									{mode === "sign-in"
