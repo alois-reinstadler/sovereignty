@@ -11,6 +11,8 @@ target = project.new_target(:ui_test_bundle, 'SovereigntyUITests', :ios, '16.4',
 target.add_dependency(app)
 target.build_configurations.each do |configuration|
   configuration.build_settings.merge!({
+    'PRODUCT_NAME' => 'SovereigntyUITests',
+    'PRODUCT_MODULE_NAME' => 'SovereigntyUITests',
     'PRODUCT_BUNDLE_IDENTIFIER' => 'app.svrgn.mobile.uitests',
     'GENERATE_INFOPLIST_FILE' => 'YES',
     'SWIFT_VERSION' => '5.0',
@@ -20,6 +22,8 @@ target.build_configurations.each do |configuration|
     'CODE_SIGNING_REQUIRED' => 'NO'
   })
 end
+project.root_object.attributes['TargetAttributes'] ||= {}
+project.root_object.attributes['TargetAttributes'][target.uuid] = { 'TestTargetID' => app.uuid }
 source = project.main_group.new_file(File.expand_path('SovereigntyUITests.swift', __dir__))
 target.source_build_phase.add_file_reference(source)
 project.save
