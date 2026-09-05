@@ -100,6 +100,10 @@ async function button(label) {
 		label,
 	);
 	assert.ok(found, `Visible enabled button: ${label}`);
+	await script(
+		"arguments[0].scrollIntoView({block: 'center', behavior: 'instant'})",
+		found,
+	);
 	const id = found["element-6066-11e4-a52e-4f735466cecf"];
 	await command("POST", `/element/${id}/click`, {});
 }
