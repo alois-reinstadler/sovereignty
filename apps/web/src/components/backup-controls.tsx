@@ -1,5 +1,7 @@
 import { Banner, Button, Card } from "@astryxdesign/core";
 import { useRef, useState } from "react";
+import { IS_DESKTOP } from "#/lib/client-platform";
+import { openDesktopBackup, saveDesktopBackup } from "#/lib/desktop-backup";
 
 import {
 	exportLocalVaultBackup,
@@ -84,11 +86,35 @@ export function BackupControls({
 		}
 	};
 
-	const downloadBackup = () => {
+	const selectNativeBackup = async () => {
 		setMessage(null);
+		setIsWorking(true);
+		try {
+			const serialized = await openDesktopBackup();
+			if (serialized === null) return;
+			if (hasExistingVault) setPendingImport(serialized);
+			else await finishImport(serialized, false);
+		} catch {
+			setMessage({
+				type: "error",
+				text: "The selected encrypted backup could not be read.",
+			});
+		} finally {
+			setIsWorking(false);
+		}
+	};
+
+	const downloadBackup = async () => {
+		setMessage(null);
+		setIsWorking(true);
 		let objectUrl: string | null = null;
 		try {
 			const backup = exportLocalVaultBackup();
+			if (IS_DESKTOP) {
+				if (await saveDesktopBackup(backup.serialized))
+					setMessage({ type: "success", text: "Encrypted backup saved." });
+				return;
+			}
 			const blob = new Blob([backup.serialized], {
 				type: "application/json;charset=utf-8",
 			});
@@ -114,6 +140,7 @@ export function BackupControls({
 			});
 		} finally {
 			if (objectUrl) URL.revokeObjectURL(objectUrl);
+			setIsWorking(false);
 		}
 	};
 
@@ -133,7 +160,9 @@ export function BackupControls({
 					label="Import backup"
 					variant="ghost"
 					size="sm"
-					onClick={() => inputRef.current?.click()}
+					onClick={() =>
+						IS_DESKTOP ? void selectNativeBackup() : inputRef.current?.click()
+					}
 					isDisabled={isDisabled || isWorking}
 				/>
 			</div>
@@ -169,7 +198,7 @@ export function BackupControls({
 						<h2 id="replace-vault-title">Replace this local vault?</h2>
 						<p>
 							The imported encrypted vault will replace the current encrypted
-							vault in this browser. Export the current vault first if you need
+							vault on this device. Export the current vault first if you need
 							it.
 						</p>
 						<div className="form-actions">

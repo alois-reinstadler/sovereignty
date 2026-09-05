@@ -91,12 +91,12 @@ finishing after revocation creates no retained entry; clearing the issued value 
 attempted without overwriting another application's contents. Clipboard erasure
 is browser/OS best-effort; JavaScript cannot guarantee memory zeroization.
 
-The native close button and application Quit are intercepted. The only native
-command, `desktop_close_ready`, acknowledges a pending close after vault locking.
+The native close button and application Quit are intercepted. The native
+command `desktop_close_ready` acknowledges a pending close after vault locking.
 The `allow-complete-close` capability is restricted to local `main`; an explicit
 app command manifest enables permission enforcement. Rust rejects unsolicited,
 wrong-window and duplicate acknowledgements. No broad core defaults, filesystem,
-shell, dialog, opener, network, secure-storage or key commands are enabled. CSP
+shell, generic dialog, opener, network, secure-storage or key commands are enabled. CSP
 keeps scripts local and includes only `wasm-unsafe-eval` for existing libsodium
 WebAssembly, not JavaScript `unsafe-eval`; IPC retains narrow transport origins.
 
@@ -105,6 +105,39 @@ that forcibly destroys an in-flight write. Retry after checking storage and the
 last durable backup. OS force-kill, power loss or a crashed webview cannot be made
 transactional by this handshake. If the frontend cannot acknowledge, the window
 stays open instead of claiming its save completed safely.
+
+## Native encrypted backups
+
+Desktop Export backup and Import backup use native OS file dialogs through two
+app-only commands, `desktop_export_backup` and `desktop_import_backup`, restricted
+to local `main` by `allow-encrypted-backup`. The Rust-only `rfd` dependency provides
+GTK dialogs on Linux and native dialogs on macOS; no generic dialog or filesystem
+plugin is exposed to JavaScript. JavaScript supplies only an encrypted envelope
+for export, never a path. Import returns only a validated encrypted envelope.
+Neither command accepts master passwords, keys or decrypted records.
+
+Both sides validate before use. Native validation rejects unknown/duplicate JSON
+fields, unsupported versions/algorithms, malformed binary encodings, invalid KDF
+bounds and data above 10 MiB. It preserves the original encrypted bytes and format.
+This structural validation cannot authenticate ciphertext without unlocking.
+The native validator intentionally requires the canonical metadata produced by
+Sovereignty v1 (safe IDs and millisecond UTC timestamps); arbitrary legacy files
+accepted by a looser web parser may be refused.
+
+Export asks for a new `.svrgn` filename and atomically refuses existing files and
+symlinks, even after a dialog overwrite confirmation. Choose another name to keep
+the prior backup. Unix files are created with mode 0600 and flushed before success
+is reported. A failed write can leave an incomplete encrypted file; retry with a
+new filename. Import reads at most 10 MiB plus one byte from a regular file; Unix
+symlinks/devices/FIFOs are refused. Existing vault replacement still needs the
+explicit in-app confirmation. Cancelling either OS dialog changes nothing.
+
+Only one native backup operation runs at once. A pending native close prevents
+new operations and cancels an open dialog's result; the close acknowledgement
+refuses to destroy the window while a backup operation is pending. Finish or
+cancel the dialog and close again. Focus-loss locking remains active, so perform
+imports from the locked screen. No permission to read arbitrary paths, overwrite
+user files, or persist plaintext has been added.
 
 ## Verification and next milestones
 

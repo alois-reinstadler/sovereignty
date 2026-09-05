@@ -3,19 +3,12 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import {
-	mkdir,
-	mkdtemp,
-	readFile,
-	readdir,
-	rm,
-	writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 
 const artifacts = resolve("apps/desktop/e2e/artifacts");
 const run = promisify(execFile);
@@ -258,18 +251,40 @@ try {
 	);
 	checks.push("locking removed credential UI");
 	await button("Export backup");
-	let backupFile;
+	const backupFile = `${storage}/downloads/native-backup.svrgn`;
 	await until(async () => {
-		const files = (await readdir(`${storage}/downloads`)).filter((name) =>
-			name.endsWith(".svrgn"),
-		);
-		if (files.length !== 1) return false;
-		backupFile = `${storage}/downloads/${files[0]}`;
-		return (await readFile(backupFile, "utf8")) === envelope;
-	}, "native encrypted backup download");
+		const { stdout } = await run("xdotool", [
+			"getactivewindow",
+			"getwindowname",
+		]);
+		return stdout.includes("Save encrypted Sovereignty backup");
+	}, "native save dialog");
+	await run("xdotool", ["key", "--clearmodifiers", "ctrl+a"]);
+	await run("xdotool", ["type", "--clearmodifiers", "--", backupFile]);
+	await run("xdotool", ["key", "--clearmodifiers", "Return"]);
+	await until(
+		async () => (await readFile(backupFile, "utf8")) === envelope,
+		"native encrypted backup save",
+	);
 	checks.push("native backup export contains exactly the encrypted envelope");
-	const backupInput = await element('input[name="encrypted-vault-backup"]');
-	await command("POST", `/element/${backupInput}/value`, { text: backupFile });
+	await until(
+		() =>
+			script(
+				"return document.body.textContent.includes('Encrypted backup saved.')",
+			),
+		"saved confirmation",
+	);
+	await button("Import backup");
+	await until(async () => {
+		const { stdout } = await run("xdotool", [
+			"getactivewindow",
+			"getwindowname",
+		]);
+		return stdout.includes("Open encrypted Sovereignty backup");
+	}, "native open dialog");
+	await run("xdotool", ["key", "--clearmodifiers", "ctrl+l"]);
+	await run("xdotool", ["type", "--clearmodifiers", "--", backupFile]);
+	await run("xdotool", ["key", "--clearmodifiers", "Return"]);
 	await until(
 		() => visible('[role="alertdialog"]'),
 		"explicit backup overwrite review",
@@ -287,7 +302,7 @@ try {
 		envelope,
 	);
 	checks.push(
-		"native file input restores backup only after explicit overwrite confirmation",
+		"native OS file dialog restores backup only after explicit overwrite confirmation",
 	);
 	const beforeReload = await diagnostics();
 	assert.deepEqual(beforeReload.errors, []);
