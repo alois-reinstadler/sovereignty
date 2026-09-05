@@ -38,6 +38,8 @@ const driver = spawn(
 			XDG_DATA_HOME: `${storage}/data`,
 			XDG_CONFIG_HOME: `${storage}/config`,
 			XDG_CACHE_HOME: `${storage}/cache`,
+			// Xvfb has no hardware GPU. Keep this test-runner setting out of the app.
+			WEBKIT_DISABLE_DMABUF_RENDERER: "1",
 		},
 		stdio: ["ignore", "pipe", "pipe"],
 	},
@@ -56,7 +58,9 @@ async function request(method, path, body) {
 		method,
 		headers: { "Content-Type": "application/json" },
 		body: body === undefined ? undefined : JSON.stringify(body),
-		signal: AbortSignal.timeout(30_000),
+		signal: AbortSignal.timeout(path === "/session" ? 60_000 : 30_000),
+	}).catch((cause) => {
+		throw new Error(`WebDriver ${method} ${path} failed`, { cause });
 	});
 	const result = await response.json();
 	if (!response.ok || result.value?.error)
@@ -272,6 +276,8 @@ try {
 	);
 	console.log(JSON.stringify({ checks }, null, 2));
 } catch (error) {
+	// Only the private display created by xvfb-run; never the shared desktop.
+	await run("scrot", [`${artifacts}/native-failure.png`]).catch(() => {});
 	if (session) {
 		await screenshot("failure").catch(() => {});
 		await writeFile(
