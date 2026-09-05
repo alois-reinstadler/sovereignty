@@ -351,7 +351,10 @@ try {
 		"getwindowpid",
 		windowId.trim(),
 	]);
-	await run("xdotool", ["windowclose", windowId.trim()]);
+	// Openbox translates Alt+F4 into a graceful WM_DELETE_WINDOW request.
+	// xdotool windowclose destroys the X window and bypasses this handshake.
+	await run("xdotool", ["windowactivate", "--sync", windowId.trim()]);
+	await run("xdotool", ["key", "--clearmodifiers", "alt+F4"]);
 	await until(() => {
 		try {
 			process.kill(Number(appPid.trim()), 0);
