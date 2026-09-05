@@ -3,7 +3,7 @@
 Sovereignty is an open-source, self-hostable password manager in active development.
 The current milestone adds a Chromium extension paired to a local encrypted vault,
 with optional authenticated, end-to-end encrypted synchronization in a TanStack
-Start web app. A Tauri desktop shell is included for the later native-client milestone.
+Start web app and a Tauri desktop development client with a local encrypted vault.
 
 > **Development preview:** Do not store real credentials yet. The cryptographic
 > design and implementation have not received an independent security audit.
@@ -24,7 +24,7 @@ Start web app. A Tauri desktop shell is included for the later native-client mil
 - Chromium Manifest V3 companion with explicit pairing and origin-bound filling
 - Extension password generator, form selection, and reproducible ZIP packaging
 - Explicit submitted-login create/update review for forms that keep their document open
-- Tauri 2 desktop packaging scaffold
+- Tauri 2 local desktop vault with native focus-loss locking and a narrow close handshake
 
 The extension is an unaudited development slice; see its permissions, installation,
 fixtures, and remaining boundaries in [docs/EXTENSION.md](./docs/EXTENSION.md).
