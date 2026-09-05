@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
 	Alert,
 	AppState,
@@ -55,15 +55,17 @@ function Action({
 }
 function Field({
 	label,
-	value,
+	initialValue,
 	onChange,
+	version = 0,
 	secret = false,
 	multiline = false,
 	limit = 16384,
 }: {
 	label: string;
-	value: string;
+	initialValue: string;
 	onChange: (value: string) => void;
+	version?: number;
 	secret?: boolean;
 	multiline?: boolean;
 	limit?: number;
@@ -71,21 +73,49 @@ function Field({
 	return (
 		<View style={styles.field}>
 			<Text style={styles.label}>{label}</Text>
-			<TextInput
-				accessibilityLabel={label}
-				testID={label.toLowerCase().replaceAll(" ", "-")}
-				value={value}
-				onChangeText={onChange}
-				secureTextEntry={secret}
+			<NativeDraftInput
+				key={version}
+				label={label}
+				initialValue={initialValue}
+				onChange={onChange}
+				secret={secret}
 				multiline={multiline}
-				maxLength={limit}
-				autoCorrect={false}
-				autoCapitalize="none"
-				autoComplete="off"
-				textContentType="none"
-				style={styles.input}
+				limit={limit}
 			/>
 		</View>
+	);
+}
+function NativeDraftInput({
+	label,
+	initialValue,
+	onChange,
+	secret,
+	multiline,
+	limit,
+}: {
+	label: string;
+	initialValue: string;
+	onChange: (value: string) => void;
+	secret: boolean;
+	multiline: boolean;
+	limit: number;
+}) {
+	const [defaultValue] = useState(initialValue);
+	return (
+		<TextInput
+			accessibilityLabel={label}
+			testID={label.toLowerCase().replaceAll(" ", "-")}
+			defaultValue={defaultValue}
+			onChangeText={onChange}
+			secureTextEntry={secret}
+			multiline={multiline}
+			maxLength={limit}
+			autoCorrect={false}
+			autoCapitalize="none"
+			autoComplete="off"
+			textContentType="none"
+			style={styles.input}
+		/>
 	);
 }
 function Editor({
@@ -102,6 +132,7 @@ function Editor({
 	const state = useSyncExternalStore(controller.subscribe, controller.getState);
 	const [draft, setDraft] = useState(initial);
 	const [revealed, setRevealed] = useState(false);
+	const [passwordVersion, setPasswordVersion] = useState(0);
 	const update = (key: keyof VaultItem, value: string | boolean) =>
 		setDraft((previous) => ({ ...previous, [key]: value }));
 	return (
@@ -111,18 +142,19 @@ function Editor({
 			</Text>
 			<Field
 				label="Title"
-				value={draft.title}
+				initialValue={draft.title}
 				onChange={(value) => update("title", value)}
 			/>
 			<Field
 				label="Username or email"
-				value={draft.username}
+				initialValue={draft.username}
 				onChange={(value) => update("username", value)}
 			/>
 			<Field
 				label="Password"
-				value={draft.password}
+				initialValue={draft.password}
 				onChange={(value) => update("password", value)}
+				version={passwordVersion}
 				secret={!revealed}
 			/>
 			<View style={styles.row}>
@@ -132,17 +164,20 @@ function Editor({
 				/>
 				<Action
 					title="Generate password"
-					onPress={() => update("password", controller.vault.generate())}
+					onPress={() => {
+						update("password", controller.vault.generate());
+						setPasswordVersion((version) => version + 1);
+					}}
 				/>
 			</View>
 			<Field
 				label="Website"
-				value={draft.website}
+				initialValue={draft.website}
 				onChange={(value) => update("website", value)}
 			/>
 			<Field
 				label="Notes"
-				value={draft.notes}
+				initialValue={draft.notes}
 				onChange={(value) => update("notes", value)}
 				multiline
 			/>
@@ -200,7 +235,7 @@ function Unlocked({ controller }: { controller: VaultController }) {
 				<>
 					<Field
 						label="Search logins"
-						value={search}
+						initialValue={search}
 						onChange={setSearch}
 						limit={256}
 					/>
@@ -279,21 +314,26 @@ function VaultScreen({ controller }: { controller: VaultController }) {
 	const state = useSyncExternalStore(controller.subscribe, controller.getState);
 	const [password, setPassword] = useState("");
 	const [confirmation, setConfirmation] = useState("");
+	const [masterFieldsVersion, setMasterFieldsVersion] = useState(0);
+	const clearMasterFields = useCallback(() => {
+		setPassword("");
+		setConfirmation("");
+		setMasterFieldsVersion((version) => version + 1);
+	}, []);
 	useEffect(() => {
 		controller.setActive(AppState.currentState === "active");
 		void controller.initialize();
 		const subscription = AppState.addEventListener("change", (next) => {
 			controller.setActive(next === "active");
 			if (next !== "active") {
-				setPassword("");
-				setConfirmation("");
+				clearMasterFields();
 			}
 		});
 		return () => {
 			subscription.remove();
 			controller.lock();
 		};
-	}, [controller]);
+	}, [clearMasterFields, controller]);
 	return (
 		<KeyboardAvoidingView
 			style={styles.screen}
@@ -325,16 +365,18 @@ function VaultScreen({ controller }: { controller: VaultController }) {
 						</Text>
 						<Field
 							label="Master password"
-							value={password}
+							initialValue={password}
 							onChange={setPassword}
+							version={masterFieldsVersion}
 							secret
 							limit={1024}
 						/>
 						{!state.hasVault && (
 							<Field
 								label="Confirm master password"
-								value={confirmation}
+								initialValue={confirmation}
 								onChange={setConfirmation}
+								version={masterFieldsVersion}
 								secret
 								limit={1024}
 							/>
@@ -355,8 +397,7 @@ function VaultScreen({ controller }: { controller: VaultController }) {
 							}
 							onPress={() => {
 								const input = password;
-								setPassword("");
-								setConfirmation("");
+								clearMasterFields();
 								void controller.authenticate(input, !state.hasVault);
 							}}
 						/>

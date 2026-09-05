@@ -82,6 +82,11 @@ revokes the controller session, wipes owned key buffers, drops live and pending
 documents, and invalidates scheduled authentication and completion callbacks.
 An already encrypted write may finish after locking; it cannot unlock the UI.
 The editor unmounts on lock, and inactive/background events clear password fields.
+Text inputs own their native text during typing, avoiding a JS value echo that
+reordered characters under simulator load. Explicit remounts replace generated
+passwords and clear master fields on submission/background; normal keystrokes
+never trigger a reset. Native acceptance verifies burst typing, reveal/hide,
+generated replacement, failed-unlock clearing and background clearing.
 Native Argon2 blocks the JavaScript thread, so lifecycle delivery waits for the
 current synchronous call; native screenshot shielding remains a follow-up.
 
