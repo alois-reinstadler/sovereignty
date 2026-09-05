@@ -28,6 +28,7 @@ import { AuthScreen } from "./auth-screen";
 import { BackupControls } from "./backup-controls";
 import { Brand } from "./brand";
 import { ChromeCsvImport } from "./chrome-csv-import";
+import { ExtensionCompanion } from "./extension-companion";
 import { ItemDetail } from "./item-detail";
 import { ItemForm } from "./item-form";
 import { SyncControls } from "./sync-controls";
@@ -411,6 +412,17 @@ export function VaultApp() {
 
 	return (
 		<main className="vault-shell">
+			<ExtensionCompanion
+				readItems={() => {
+					if (
+						lockingRef.current ||
+						!sessionRef.current ||
+						Date.now() - lastActivity.current >= autoLockMinutes * 60_000
+					)
+						return null;
+					return documentRef.current?.items ?? null;
+				}}
+			/>
 			<aside className="vault-nav">
 				<div className="nav-brand-row">
 					<Brand />

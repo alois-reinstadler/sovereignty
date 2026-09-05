@@ -1,6 +1,7 @@
 {
   "name": "@svrgn/web",
   "private": true,
+	"packageManager": "pnpm@11.24.0",
   "type": "module",
   "imports": {
     "#/*": "./src/*"
@@ -20,6 +21,7 @@
     "check": "biome check"
   },
   "dependencies": {
+		"@svrgn/extension-protocol": "workspace:*",
     "@astryxdesign/core": "0.5.2",
     "@astryxdesign/theme-neutral": "0.5.2",
     "@better-auth/passkey": "1.7.2",
