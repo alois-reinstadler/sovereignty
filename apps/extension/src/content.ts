@@ -1,6 +1,6 @@
 import { normalizeOrigin, requestIsLive } from "@svrgn/extension-protocol";
 import { FormDiscovery } from "./forms";
-import { parseContentRequest } from "./messages";
+import { CONTENT_PORT_NAME, parseContentRequest } from "./messages";
 
 // Reinjection replaces the old listener and its DOM handles instead of multiplying it.
 type Context = typeof globalThis & { __svrgnCleanup?: () => void };
@@ -19,6 +19,7 @@ const listener = (
 		sender.tab ||
 		!message ||
 		window.top !== window ||
+		globalThis.origin !== message.origin ||
 		!requestIsLive(message) ||
 		message.origin !== normalizeOrigin(location.href) ||
 		seen.has(message.id)
@@ -37,20 +38,34 @@ const listener = (
 		setTimeout(() => discovery.clear(), 10_000);
 		return;
 	}
-	const ok = discovery.fill(
-		message.formId,
-		message.origin,
-		message.username,
-		message.password,
-	);
-	message.username = "";
-	message.password = "";
-	message = null;
+	let ok = false;
+	try {
+		ok = discovery.fill(
+			message.formId,
+			message.origin,
+			message.username,
+			message.password,
+		);
+	} catch {
+		ok = false;
+	} finally {
+		message.username = "";
+		message.password = "";
+		message = null;
+	}
 	respond({ ok });
 };
 chrome.runtime.onMessage.addListener(listener);
+const port = chrome.runtime.connect({ name: CONTENT_PORT_NAME });
 context.__svrgnCleanup = () => {
 	chrome.runtime.onMessage.removeListener(listener);
 	discovery.clear();
 	seen.clear();
+	port.disconnect();
 };
+port.onDisconnect.addListener(() => {
+	void chrome.runtime.lastError;
+	chrome.runtime.onMessage.removeListener(listener);
+	discovery.clear();
+	seen.clear();
+});

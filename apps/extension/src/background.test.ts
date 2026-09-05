@@ -19,6 +19,7 @@ const origin = "https://login.example.test";
 const vaultOrigin = "https://vault.example.test";
 let internal: ReturnType<typeof event>;
 let external: ReturnType<typeof event>;
+let contentConnections: ReturnType<typeof event>;
 let removed: ReturnType<typeof event>;
 let updated: ReturnType<typeof event>;
 let onMessage: ReturnType<typeof event>;
@@ -29,6 +30,9 @@ let port: Record<string, unknown>;
 let onRequest: (message: Record<string, unknown>) => void;
 let sendMessage: ReturnType<typeof vi.fn>;
 let settings: Record<string, unknown>;
+let contentSenderChanges: Record<string, unknown>;
+let contentDisconnect: ReturnType<typeof event>;
+let registerContent = true;
 const popupSender = {
 	id: extId,
 	url: `chrome-extension://${extId}/popup.html`,
@@ -70,6 +74,9 @@ beforeEach(async () => {
 	vi.resetModules();
 	internal = event();
 	external = event();
+	contentConnections = event();
+	contentSenderChanges = {};
+	registerContent = true;
 	removed = event();
 	updated = event();
 	active = { id: 1, url: origin };
@@ -86,6 +93,7 @@ beforeEach(async () => {
 			getURL: (path: string) => `chrome-extension://${extId}/${path}`,
 			onMessage: internal,
 			onConnectExternal: external,
+			onConnect: contentConnections,
 		},
 		storage: {
 			local: {
@@ -107,9 +115,28 @@ beforeEach(async () => {
 			onUpdated: updated,
 		},
 		scripting: {
-			executeScript: vi.fn(async () => [
-				{ frameId: 0, documentId: "document-1" },
-			]),
+			executeScript: vi.fn(async () => {
+				const localDisconnect = event();
+				contentDisconnect = localDisconnect;
+				if (registerContent)
+					contentConnections.emit({
+						name: "svrgn-content-registration-v1",
+						sender: {
+							id: extId,
+							tab: { id: 1 },
+							frameId: 0,
+							documentId: "document-1",
+							origin,
+							url: origin,
+							documentLifecycle: "active",
+							...contentSenderChanges,
+						},
+						onMessage: event(),
+						onDisconnect: localDisconnect,
+						disconnect: vi.fn(() => localDisconnect.emit()),
+					});
+				return [{ frameId: 0, documentId: "document-1" }];
+			}),
 		},
 	});
 	onRequest = (message) =>
@@ -266,5 +293,89 @@ describe("background authorization", () => {
 		await pair();
 		vi.setSystemTime(Date.now() + 300001);
 		expect((await popup({ type: "list" })).ok).toBe(false);
+	});
+	it.each([
+		{ origin: "null" },
+		{ origin: "https://evil.test", url: "https://evil.test" },
+		{ frameId: 1 },
+		{ tab: { id: 2 } },
+		{ documentId: "other-document" },
+		{ id: "another-extension" },
+		{ documentLifecycle: "cached" },
+	])("rejects untrusted content registration %j", async (sender) => {
+		await pair();
+		contentSenderChanges = sender;
+		const result = popup({ type: "list" });
+		await vi.advanceTimersByTimeAsync(10_001);
+		expect((await result).ok).toBe(false);
+		expect(port.postMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({ type: "request" }),
+		);
+	});
+	it("requires browser registration even when a hostile discovery reply claims safe forms", async () => {
+		await pair();
+		registerContent = false;
+		const result = popup({ type: "list" });
+		await vi.advanceTimersByTimeAsync(10_001);
+		expect((await result).ok).toBe(false);
+		expect(sendMessage).not.toHaveBeenCalled();
+	});
+	it("replaces registration on reinjection and revokes the previous popup grant", async () => {
+		await pair();
+		const first = await popup({ type: "list" });
+		const second = await popup({ type: "list" });
+		expect(
+			(await popup({ type: "fill", token: first.token, itemId, formId })).ok,
+		).toBe(false);
+		expect(
+			(await popup({ type: "fill", token: second.token, itemId, formId })).ok,
+		).toBe(true);
+	});
+	it.each([
+		"disconnect",
+		"navigation",
+	])("rejects %s before credential dispatch", async (change) => {
+		await pair();
+		const list = await popup({ type: "list" });
+		onRequest = (message) => {
+			if (change === "disconnect") contentDisconnect.emit();
+			else updated.emit(1, { url: `${origin}/next` });
+			onMessage.emit({
+				v: 1,
+				type: "credential",
+				id: message.id,
+				itemId,
+				username: "synthetic-user",
+				password: "synthetic-password-only",
+			});
+		};
+		expect(
+			(await popup({ type: "fill", token: list.token, itemId, formId })).ok,
+		).toBe(false);
+		expect(sendMessage).toHaveBeenCalledTimes(1);
+	});
+	it("clears plaintext immediately and expires a renderer that never acknowledges fill", async () => {
+		await pair();
+		const list = await popup({ type: "list" });
+		let response: Record<string, unknown> | undefined;
+		onRequest = (message) => {
+			response = {
+				v: 1,
+				type: "credential",
+				id: message.id,
+				itemId,
+				username: "synthetic-user",
+				password: "synthetic-password-only",
+			};
+			onMessage.emit(response);
+		};
+		sendMessage.mockImplementationOnce(() => new Promise(() => {}));
+		const fill = popup({ type: "fill", token: list.token, itemId, formId });
+		await vi.advanceTimersByTimeAsync(1);
+		expect(response).toMatchObject({ username: "", password: "" });
+		await popup({ type: "lock" });
+		await vi.advanceTimersByTimeAsync(10_001);
+		expect((await fill).ok).toBe(false);
+		expect(sendMessage).toHaveBeenCalledTimes(2);
 	});
 });

@@ -5,6 +5,7 @@ import {
 	textField,
 	uuid,
 } from "@svrgn/extension-protocol";
+export const CONTENT_PORT_NAME = "svrgn-content-registration-v1";
 export type PopupRequest =
 	| { type: "status" }
 	| { type: "lock" }
