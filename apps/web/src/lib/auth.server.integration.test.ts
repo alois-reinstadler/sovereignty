@@ -170,7 +170,7 @@ describe
 			expect(await identityCounts()).toEqual(before);
 		}, 20_000);
 
-		it("open signup stores a hash, authenticates with its cookie, and signout invalidates the session", async () => {
+		it("open signup stores a hash, signout invalidates its session, and closed mode permits existing-account sign-in", async () => {
 			const auth = createAuth("open");
 			const email = emailAddress();
 			const response = await signup(auth, email);
@@ -207,6 +207,26 @@ describe
 				[created.user.id],
 			);
 			expect(remaining.rows).toEqual([]);
+			// Closing registration must not lock out an already registered account.
+			const closedAuth = createAuth("closed");
+			const signedIn = await closedAuth.handler(
+				new Request(`${origin}/api/auth/sign-in/email`, {
+					method: "POST",
+					headers: { origin, "content-type": "application/json" },
+					body: JSON.stringify({ email, password }),
+				}),
+			);
+			expect(signedIn.status).toBe(200);
+			expect(
+				await (await session(closedAuth, cookieHeader(signedIn))).json(),
+			).toMatchObject({ user: { id: created.user.id, email } });
+			expect(
+				(
+					await pool.query('select id from "session" where "userId" = $1', [
+						created.user.id,
+					])
+				).rows,
+			).toHaveLength(1);
 		}, 20_000);
 
 		it.each([

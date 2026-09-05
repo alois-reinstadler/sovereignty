@@ -12,6 +12,114 @@ import { parseServerEnvironment } from "./server-env";
 
 describe("Better Auth configuration", () => {
 	it.each([
+		[
+			"unexpected cookieless Origin",
+			{ origin: "https://attacker.example.test" },
+			403,
+		],
+		[
+			"lookalike Origin",
+			{ origin: "https://vault.example.test.attacker.test" },
+			403,
+		],
+		[
+			"untrusted subdomain",
+			{ origin: "https://child.vault.example.test" },
+			403,
+		],
+		["different scheme", { origin: "http://vault.example.test" }, 403],
+		["different port", { origin: "https://vault.example.test:8443" }, 403],
+		["null Origin without same-origin metadata", { origin: "null" }, 403],
+		[
+			"unexpected Referer without Origin",
+			{ referer: "https://attacker.example.test/page" },
+			403,
+		],
+		[
+			"cross-site browser navigation without Origin",
+			{
+				"sec-fetch-site": "cross-site",
+				"sec-fetch-mode": "navigate",
+				"sec-fetch-dest": "document",
+			},
+			403,
+		],
+		[
+			"unexpected Origin with same-origin metadata",
+			{
+				origin: "https://attacker.example.test",
+				"sec-fetch-site": "same-origin",
+				"sec-fetch-mode": "cors",
+			},
+			403,
+		],
+		[
+			"trusted same-origin browser signup",
+			{
+				origin: "https://vault.example.test",
+				"sec-fetch-site": "same-origin",
+				"sec-fetch-mode": "cors",
+			},
+			200,
+		],
+		[
+			"trusted Referer without Origin",
+			{ referer: "https://vault.example.test/account" },
+			200,
+		],
+		["native cookieless request without browser metadata", {}, 200],
+	] as const)("enforces production CSRF controls for %s", async (_label, suppliedHeaders, expectedStatus) => {
+		const pool = new Pool({ connectionString: "postgresql://unused/unused" });
+		try {
+			const options = buildAuthOptions(
+				parseServerEnvironment({
+					NODE_ENV: "production",
+					DATABASE_URL: "postgresql://unused/unused",
+					BETTER_AUTH_SECRET:
+						"synthetic-test-secret-with-at-least-32-characters",
+					BETTER_AUTH_URL: "https://vault.example.test",
+					BETTER_AUTH_TRUSTED_ORIGINS: "https://vault.example.test",
+					SIGNUP_MODE: "open",
+				}),
+				pool,
+			);
+			// Preserve production plugins, middleware and database rate limiting.
+			const data = {
+				user: [],
+				session: [],
+				account: [],
+				verification: [],
+				rateLimit: [],
+			};
+			const auth = betterAuth({
+				...options,
+				database: memoryAdapter(data),
+				logger: { disabled: true },
+			});
+			const headers = new Headers(suppliedHeaders);
+			headers.set("content-type", "application/json");
+			const response = await auth.handler(
+				new Request("https://vault.example.test/api/auth/sign-up/email", {
+					method: "POST",
+					headers,
+					body: JSON.stringify({
+						name: "Synthetic user",
+						email: "synthetic@example.test",
+						password: "synthetic-password-only-for-tests",
+					}),
+				}),
+			);
+			expect(response.status).toBe(expectedStatus);
+			if (expectedStatus === 403) {
+				expect(data.user).toHaveLength(0);
+				expect(data.account).toHaveLength(0);
+				expect(data.session).toHaveLength(0);
+			}
+		} finally {
+			await pool.end();
+		}
+	});
+	it.each([
 		"closed",
 		"invite-only",
 	])("enforces %s policy on direct and OAuth user creation", async (SIGNUP_MODE) => {
@@ -154,8 +262,10 @@ describe("Better Auth configuration", () => {
 				storage: "database",
 			});
 			expect(options.trustedOrigins).toEqual(["https://vault.example.test"]);
-			expect(options.advanced).not.toHaveProperty("disableCSRFCheck");
-			expect(options.advanced).not.toHaveProperty("disableOriginCheck");
+			expect(options.advanced).toMatchObject({
+				disableCSRFCheck: false,
+				disableOriginCheck: false,
+			});
 			expect(options.plugins?.[0]?.id).toBe("passkey");
 			expect(options.plugins?.at(-1)?.id).toBe("tanstack-start-cookies");
 		} finally {

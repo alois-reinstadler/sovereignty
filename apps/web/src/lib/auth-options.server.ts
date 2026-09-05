@@ -59,6 +59,11 @@ export const buildAuthOptions = (
 		},
 	},
 	advanced: {
+		// Better Auth otherwise defaults origin checks off when its global isTest()
+		// detects Vitest, regardless of the parsed server environment. Pin both
+		// controls so integration tests exercise the same security as production.
+		disableOriginCheck: false,
+		disableCSRFCheck: false,
 		useSecureCookies: environment.nodeEnv === "production",
 		database: {
 			generateId: "uuid",
