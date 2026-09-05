@@ -59,6 +59,17 @@ jobs:
         env:
           SVRGN_IOS_APP_PATH: ${{ runner.temp }}/sovereignty-ios-build/Build/Products/Release-iphonesimulator/Sovereignty.app
         run: node scripts/native/ios-test.mjs
+      - name: Build normal application and native UI tests
+        env:
+          ENTRY_FILE: ${{ github.workspace }}/apps/mobile/index.ts
+        run: |
+          ruby scripts/native/ios-ui-target.rb
+          xcodebuild build-for-testing -workspace apps/mobile/ios/Sovereignty.xcworkspace -scheme SovereigntyUITests -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/sovereignty-ios-build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > artifacts/ios/ui-build.log 2>&1 || { tail -n 180 artifacts/ios/ui-build.log; exit 1; }
+      - name: Exercise vault creation, persistence and OS background locking
+        env:
+          SVRGN_IOS_APP_PATH: ${{ runner.temp }}/sovereignty-ios-build/Build/Products/Release-iphonesimulator/Sovereignty.app
+          SVRGN_IOS_UI: "1"
+        run: node scripts/native/ios-test.mjs
       # Test reports and dependency metadata only. Never publish app binaries.
       - name: Preserve native test evidence
         if: always()
