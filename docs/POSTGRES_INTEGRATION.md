@@ -5,6 +5,13 @@ explicitly requested path runs the actual migration script and sync store agains
 PostgreSQL 17. It requires Node.js 24+, pnpm, Docker Engine and Docker Compose v2.
 It does not start Sovereignty or expose any host ports.
 
+The repository's CI runs the same fixture in its **PostgreSQL integration** job
+on pushes, pull requests and manual workflow runs. This uses the existing GitHub
+Actions runner with read-only repository permissions and needs no repository
+secrets or separately provisioned database. The fixture installs dependencies
+inside its image, starts its isolated PostgreSQL service, and fails the job on
+test or cleanup failure. Job timeout is 15 minutes.
+
 From the repository root, run:
 
 ```sh
