@@ -93,12 +93,24 @@ async function fill(selector, text) {
 	await command("POST", `/element/${id}/value`, { text });
 }
 async function readClipboard() {
-	const { stdout } = await run(
-		"xclip",
-		["-selection", "clipboard", "-out"],
-		{ timeout: 2_000 },
-	);
-	return stdout;
+	try {
+		const { stdout } = await run(
+			"xclip",
+			["-selection", "clipboard", "-out"],
+			{ timeout: 2_000 },
+		);
+		return stdout;
+	} catch (error) {
+		// WebKit clears the X11 text selection entirely. xclip then reports
+		// absence of a text target instead of returning an empty string.
+		if (
+			error.code === 1 &&
+			error.stdout === "" &&
+			error.stderr.trim() === "Error: target STRING not available"
+		)
+			return null;
+		throw error;
+	}
 }
 async function writeClipboard(value) {
 	const child = ownedProcess(
@@ -112,6 +124,7 @@ async function writeClipboard(value) {
 async function expectClipboard(expected, description) {
 	await until(async () => {
 		const actual = await readClipboard();
+		if (expected === "" && actual === null) return true;
 		assert.equal(
 			actual,
 			expected,
