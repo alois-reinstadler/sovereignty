@@ -1,1 +1,31 @@
-{"name":"@svrgn/extension","version":"0.1.0","private":true,"type":"module","packageManager":"pnpm@11.24.0","scripts":{"build":"node scripts/build.mjs","package":"pnpm build && python3 scripts/package.py","test":"vitest run","typecheck":"tsc --noEmit","check":"biome check src"},"dependencies":{"@astryxdesign/core":"0.5.2","@astryxdesign/theme-neutral":"0.5.2","@svrgn/extension-protocol":"workspace:*","react":"19.2.8","react-dom":"19.2.8"},"devDependencies":{"@biomejs/biome":"2.4.5","@types/chrome":"0.1.37","@types/react":"19.2.18","@types/react-dom":"19.2.5","typescript":"6.0.3","vite":"8.2.2","vitest":"4.1.11","jsdom":"27.4.0"}}
+{
+	"name": "@svrgn/extension",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@11.24.0",
+	"scripts": {
+		"build": "node scripts/build.mjs",
+		"package": "pnpm build && python3 scripts/package.py",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit",
+		"check": "biome check src fixtures scripts/build.mjs manifest.json package.json tsconfig.json"
+	},
+	"dependencies": {
+		"@astryxdesign/core": "0.5.2",
+		"@astryxdesign/theme-neutral": "0.5.2",
+		"@svrgn/extension-protocol": "workspace:*",
+		"react": "19.2.8",
+		"react-dom": "19.2.8"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.4.5",
+		"@types/chrome": "0.1.37",
+		"@types/react": "19.2.18",
+		"@types/react-dom": "19.2.5",
+		"typescript": "6.0.3",
+		"vite": "8.2.2",
+		"vitest": "4.1.11",
+		"jsdom": "27.4.0"
+	}
+}

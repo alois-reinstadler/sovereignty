@@ -1,9 +1,16 @@
 {
- "manifest_version":3,"name":"Sovereignty","version":"0.1.0","description":"An explicitly paired companion to your self-hosted Sovereignty vault. Development preview; independent audit required.",
- "minimum_chrome_version":"120",
- "permissions":["activeTab","scripting","storage"],
- "action":{"default_popup":"popup.html","default_title":"Sovereignty"},
- "background":{"service_worker":"background.js","type":"module"},
- "externally_connectable":{"matches":["https://*/*","http://localhost/*","http://127.0.0.1/*"]},
- "content_security_policy":{"extension_pages":"script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"}
+	"manifest_version": 3,
+	"name": "Sovereignty",
+	"version": "0.1.0",
+	"description": "An explicitly paired companion to your self-hosted Sovereignty vault. Development preview; independent audit required.",
+	"minimum_chrome_version": "120",
+	"permissions": ["activeTab", "scripting", "storage"],
+	"action": { "default_popup": "popup.html", "default_title": "Sovereignty" },
+	"background": { "service_worker": "background.js", "type": "module" },
+	"externally_connectable": {
+		"matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"]
+	},
+	"content_security_policy": {
+		"extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+	}
 }

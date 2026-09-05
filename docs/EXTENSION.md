@@ -47,13 +47,21 @@ Only the exact internal popup URL, matching runtime extension ID, and absence of
 
 A single-use popup fill capability binds session identity, tab ID, document ID, origin, listed item IDs, eligible form handles and expiry. The worker rechecks the active tab/origin/session after every credential await and checks the original grant deadline before dispatch. A navigation cannot receive a message addressed to an older document. Disconnect rejects pending requests and clears capabilities. Service-worker suspension/restart fails closed: memory sessions disappear and pairing is required again.
 
+Before requesting metadata or secrets, the worker requires a live content port
+registration whose Chrome-supplied sender ID, tab, frame 0, document ID, active
+lifecycle and effective origin match the injected target. A sandboxed document's
+URL can look trusted while its effective origin is opaque; that registration is
+rejected. Registration alone has no list/fill authority. Disconnect, navigation,
+lock and worker restart invalidate it. The content script additionally rejects
+an effective origin that differs from its normalized URL origin.
+
 ### Page/content threat model
 
 Treat the target page and content script as hostile. Neither can authorize a credential request. A compromised content script can lie about eligible form handles, but only receives the one credential that the user selected for the browser-derived exact top-level origin; it cannot obtain another origin's credential or a whole vault. The page necessarily reads any values intentionally filled into its DOM. There is no protection against malicious scripts already running on the selected matching origin.
 
 The isolated content script uses its own DOM references, not page-provided CSS selectors. It considers only visible, writable inputs in the same top-level form, with exactly one recognizable username/email field and one password field, and a same-origin form action. Hidden, disabled, readonly, inert, transparent, zero-size and disabled-fieldset fields are excluded. Multiple eligible forms have separate random handles; ambiguous fields are refused. Before filling it rechecks expiry, origin, identity, connectivity, form ownership and visibility. DOM replacement invalidates references. Both values are set before input/change events, so a username listener cannot redirect the second write. The script never submits. Embedded cross-origin and sandboxed frames are not traversed; shadow DOM, multi-step forms and ambiguous multi-password flows are unsupported.
 
-Plaintext credentials exist only during message handling and the selected DOM write. Background/content references are overwritten and released afterward; form handles expire. JavaScript strings, messaging copies, garbage collection and browser internals prevent guaranteed memory zeroization. Locking before dispatch cancels the operation; locking after dispatch cannot retract values already delivered to an authorized page. These limits require review in the independent audit.
+Plaintext credentials exist only during message handling and the selected DOM write. The worker releases its credential reference immediately after Chrome serializes the message, before awaiting the page; acknowledgements are bounded by the original grant deadline. Content exceptions also release references; form handles expire. JavaScript strings, messaging copies, garbage collection and browser internals prevent guaranteed memory zeroization. Locking before dispatch cancels the operation; locking after dispatch cannot retract values already delivered to an authorized page. These limits require review in the independent audit.
 
 ## Browser fixture and verification
 

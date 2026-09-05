@@ -1,1 +1,20 @@
-{"name":"@svrgn/extension-protocol","version":"0.0.0","private":true,"type":"module","packageManager":"pnpm@11.24.0","exports":{".":"./src/index.ts"},"scripts":{"check":"biome check src","test":"vitest run","typecheck":"tsc --noEmit"},"devDependencies":{"@biomejs/biome":"2.4.5","typescript":"6.0.3","vitest":"4.1.11"}}
+{
+	"name": "@svrgn/extension-protocol",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@11.24.0",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"check": "biome check src",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.4.5",
+		"typescript": "6.0.3",
+		"vitest": "4.1.11"
+	}
+}
