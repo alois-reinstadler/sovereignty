@@ -81,9 +81,10 @@ the native notification reached JavaScript.
 Locks invalidate in-progress key derivation and clear master-password,
 confirmation and reveal drafts even while locked or creating a vault. The
 credential form resets without unmounting the encrypted backup picker on an
-already locked screen. Import while locked to keep file selection and overwrite
-confirmation stable. Import from an unlocked screen may be interrupted by the
-mandatory focus-loss lock; reopen Import backup from the locked screen if needed.
+already locked screen. Desktop backup actions are available only while locked,
+with an explicit explanation in the unlocked sidebar. This keeps file selection
+and overwrite confirmation in the stable locked view while OS dialogs trigger
+the mandatory focus-loss lock.
 
 A lock during encryption immediately hides secret UI and denies new reads,
 copies or saves. Key closure queues behind the started write. A clipboard write
@@ -91,12 +92,12 @@ finishing after revocation creates no retained entry; clearing the issued value 
 attempted without overwriting another application's contents. Clipboard erasure
 is browser/OS best-effort; JavaScript cannot guarantee memory zeroization.
 
-The native close button and application Quit are intercepted. The only native
-command, `desktop_close_ready`, acknowledges a pending close after vault locking.
+The native close button and application Quit are intercepted. The native
+command `desktop_close_ready` acknowledges a pending close after vault locking.
 The `allow-complete-close` capability is restricted to local `main`; an explicit
 app command manifest enables permission enforcement. Rust rejects unsolicited,
 wrong-window and duplicate acknowledgements. No broad core defaults, filesystem,
-shell, dialog, opener, network, secure-storage or key commands are enabled. CSP
+shell, generic dialog, opener, network, secure-storage or key commands are enabled. CSP
 keeps scripts local and includes only `wasm-unsafe-eval` for existing libsodium
 WebAssembly, not JavaScript `unsafe-eval`; IPC retains narrow transport origins.
 
@@ -106,6 +107,61 @@ last durable backup. OS force-kill, power loss or a crashed webview cannot be ma
 transactional by this handshake. If the frontend cannot acknowledge, the window
 stays open instead of claiming its save completed safely.
 
+## Native encrypted backups
+
+Desktop Export backup and Import backup use native OS file dialogs through two
+app-only commands, `desktop_export_backup` and `desktop_import_backup`, restricted
+to local `main` by `allow-encrypted-backup`. The Rust-only `rfd` dependency provides
+GTK dialogs on Linux and native dialogs on macOS; no generic dialog or filesystem
+plugin is exposed to JavaScript. JavaScript supplies only an encrypted envelope
+for export, never a path. Import returns only a validated encrypted envelope.
+Neither command accepts master passwords, keys or decrypted records.
+
+Both sides validate before use. Native validation rejects unknown/duplicate JSON
+fields, unsupported versions/algorithms, malformed binary encodings, invalid KDF
+bounds and data above 10 MiB. It preserves the original encrypted bytes and format.
+This structural validation cannot authenticate ciphertext without unlocking.
+The native validator intentionally requires the canonical metadata produced by
+Sovereignty v1 (safe IDs and millisecond UTC timestamps); arbitrary legacy files
+accepted by a looser web parser may be refused.
+
+Export asks for a new `.svrgn` filename and atomically refuses existing files and
+symlinks, even after a dialog overwrite confirmation. Choose another name to keep
+the prior backup. Unix files are created with mode 0600 and flushed before success
+is reported. A failed write can leave an incomplete encrypted file; retry with a
+new filename. Import reads at most 10 MiB plus one byte from a regular file; Unix
+symlinks/devices/FIFOs are refused. Existing vault replacement still needs the
+explicit in-app confirmation. Cancelling either OS dialog changes nothing.
+
+Only one native backup operation runs at once. A pending native close prevents
+new operations and cancels an open dialog's result; the close acknowledgement
+refuses to destroy the window while a backup operation is pending. Finish or
+cancel the dialog and close again. Focus-loss locking remains active, so perform
+imports from the locked screen. No permission to read arbitrary paths, overwrite
+user files, or persist plaintext has been added.
+
+## Native dependency release gates
+
+A clean `pnpm audit --audit-level high` result describes JavaScript dependencies;
+it is not a Rust dependency audit or a claim that the native stack is advisory-free.
+The [2026-09-05 native audit snapshot](NATIVE_AUDIT.md) records an actual
+`cargo-audit 0.22.2` run: zero vulnerability-category findings, sixteen unmaintained
+warnings and one unsoundness warning. The strict `--deny warnings` check exits 1.
+The current Linux Tauri/GTK3 dependency graph includes these upstream limitations:
+
+- `glib 0.18.5`: [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)
+  reports unsound iterator implementations in `VariantStrIter`. The fix requires
+  glib 0.20 or newer, outside this GTK3 stack's compatible dependency series.
+  Sovereignty does not directly use `VariantStrIter`; that does not establish
+  that all transitive native paths are unaffected.
+- `gtk 0.18.2`: [RUSTSEC-2024-0415](https://rustsec.org/advisories/RUSTSEC-2024-0415.html)
+  records that the GTK3 Rust bindings are unmaintained, with no patched version.
+
+These are upstream release gates requiring a compatible maintained native stack
+and independent review before production claims. This increment does not vendor
+patches, suppress advisory IDs or force an incompatible GTK migration. Native
+compilation and successful synthetic WebKit tests do not remove these limitations.
+
 ## Verification and next milestones
 
 Shared-client tests cover desktop/web session isolation, events and cleanup,
@@ -113,8 +169,9 @@ queued closure, late unlock refusal, auth draft revocation and clipboard races.
 Existing crypto adapter tests cover write ordering and closing after successful
 and failed saves. Rust tests cover exact navigation and single-use close approval.
 
-This container lacks Rust/native WebKit prerequisites. The implementation agent
-verified JavaScript tests, typing, formatting and desktop static assets locally.
+Native WebKit prerequisites are unavailable in the development container. The
+implementation agent verified JavaScript tests, typing, formatting, desktop
+static assets and the Rust dependency audit locally using an isolated toolchain.
 Unsigned Linux/macOS builds and real Linux WebKit checks run separately in CI;
 consult their results for the exact tested commit. Do not infer native runtime
 verification from `info` or a Chrome preview. macOS needs runtime review in addition

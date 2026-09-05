@@ -2,3 +2,8 @@
 identifier = "allow-complete-close"
 description = "Acknowledge a pending native close only after the local vault has finished locking."
 commands.allow = ["desktop_close_ready"]
+
+[[permission]]
+identifier = "allow-encrypted-backup"
+description = "Select one encrypted backup through an OS dialog to read or create; paths and plaintext are never accepted from JavaScript."
+commands.allow = ["desktop_export_backup", "desktop_import_backup"]

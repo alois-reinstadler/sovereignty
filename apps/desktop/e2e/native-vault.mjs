@@ -3,12 +3,12 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 
 const artifacts = resolve("apps/desktop/e2e/artifacts");
 const run = promisify(execFile);
@@ -116,6 +116,15 @@ async function screenshot(name) {
 	const encoded = await command("GET", "/screenshot");
 	await writeFile(`${artifacts}/${name}.png`, Buffer.from(encoded, "base64"));
 }
+async function nativeDialog(title) {
+	await until(async () => {
+		const { stdout } = await run("xdotool", [
+			"getactivewindow",
+			"getwindowname",
+		]);
+		return stdout.includes(title);
+	}, `native dialog: ${title}`);
+}
 async function diagnostics() {
 	return script(`return {
     url: location.href,
@@ -131,6 +140,12 @@ async function diagnostics() {
 try {
 	await mkdir(artifacts, { recursive: true });
 	storage = await mkdtemp(`${tmpdir()}/sovereignty-native-test-`);
+	await mkdir(`${storage}/config`, { recursive: true });
+	await mkdir(`${storage}/downloads`, { recursive: true });
+	await writeFile(
+		`${storage}/config/user-dirs.dirs`,
+		`XDG_DOWNLOAD_DIR="${storage}/downloads"\n`,
+	);
 	port = await freePort();
 	let nativePort = await freePort();
 	while (nativePort === port) nativePort = await freePort();
@@ -233,6 +248,21 @@ try {
 		);
 	}
 	checks.push("saved login and checked persisted envelope excludes plaintext");
+	assert.equal(
+		await script(
+			`return [...document.querySelectorAll('button')].some(e => /^(Import|Export) backup$/.test(e.textContent.trim()))`,
+		),
+		false,
+	);
+	assert.equal(
+		await script(
+			"return document.body.textContent.includes('Lock the vault to import or export encrypted backups.')",
+		),
+		true,
+	);
+	checks.push(
+		"unlocked desktop requires explicit lock before backup dialogs to preserve callbacks",
+	);
 	await screenshot("vault");
 	await button("Lock vault");
 	await until(() => visible('input[name="master-password"]'), "manual lock");
@@ -244,6 +274,77 @@ try {
 		false,
 	);
 	checks.push("locking removed credential UI");
+	const invalidNativeExport = await command("POST", "/execute/async", {
+		script: `const done = arguments[arguments.length - 1];
+		window.__TAURI_INTERNALS__.invoke('desktop_export_backup', {serialized: '{"password":"synthetic only"}'}).then(() => done(false), () => done(true));`,
+		args: [],
+	});
+	assert.equal(invalidNativeExport, true);
+	checks.push(
+		"actual native command rejects plaintext before opening a dialog",
+	);
+	await button("Export backup");
+	await nativeDialog("Save encrypted Sovereignty backup");
+	await run("xdotool", ["key", "--clearmodifiers", "Escape"]);
+	await until(
+		() =>
+			script(
+				"return [...document.querySelectorAll('button')].some(e => e.textContent.trim().endsWith('Export backup') && !e.disabled)",
+			),
+		"cancelled backup releases operation",
+	);
+	assert.equal(
+		await script("return localStorage.getItem('svrgn.vault.envelope.v1')"),
+		envelope,
+	);
+	checks.push("cancelling native export preserves the vault and permits retry");
+	await button("Export backup");
+	const backupFile = `${storage}/downloads/native-backup.svrgn`;
+	await nativeDialog("Save encrypted Sovereignty backup");
+	await run("scrot", [`${artifacts}/backup-save-dialog.png`]);
+	await run("xdotool", ["key", "--clearmodifiers", "ctrl+a"]);
+	await run("xdotool", ["type", "--clearmodifiers", "--", backupFile]);
+	await run("xdotool", ["key", "--clearmodifiers", "Return"]);
+	await until(
+		async () => (await readFile(backupFile, "utf8")) === envelope,
+		"native encrypted backup save",
+	);
+	checks.push("native backup export contains exactly the encrypted envelope");
+	await until(
+		() =>
+			script(
+				"return document.body.textContent.includes('Encrypted backup saved.')",
+			),
+		"saved confirmation",
+	);
+	await button("Import backup");
+	await nativeDialog("Open encrypted Sovereignty backup");
+	await run("scrot", [`${artifacts}/backup-open-dialog.png`]);
+	await run("xdotool", ["key", "--clearmodifiers", "ctrl+l"]);
+	await run("xdotool", ["type", "--clearmodifiers", "--", backupFile]);
+	await run("xdotool", ["key", "--clearmodifiers", "Return"]);
+	// GTK resolves the location entry before its explicit Open action.
+	await delay(500);
+	await run("xdotool", ["key", "--clearmodifiers", "alt+o"]);
+	await until(
+		() => visible('[role="alertdialog"]'),
+		"explicit backup overwrite review",
+	);
+	await button("Replace and lock");
+	await until(
+		() =>
+			script(
+				"return !document.querySelector('[role=alertdialog]') && document.body.textContent.includes('Encrypted backup imported.')",
+			),
+		"native encrypted backup import",
+	);
+	assert.equal(
+		await script("return localStorage.getItem('svrgn.vault.envelope.v1')"),
+		envelope,
+	);
+	checks.push(
+		"native OS file dialog restores backup only after explicit overwrite confirmation",
+	);
 	const beforeReload = await diagnostics();
 	assert.deepEqual(beforeReload.errors, []);
 	assert.deepEqual(
@@ -302,6 +403,26 @@ try {
 		[],
 	);
 	checks.push("desktop made no unsupported account or sync requests");
+	const { stdout: appPid } = await run("xdotool", [
+		"getwindowpid",
+		windowId.trim(),
+	]);
+	// Openbox translates Alt+F4 into a graceful WM_DELETE_WINDOW request.
+	// xdotool windowclose destroys the X window and bypasses this handshake.
+	await run("xdotool", ["windowactivate", "--sync", windowId.trim()]);
+	await run("xdotool", ["key", "--clearmodifiers", "alt+F4"]);
+	await until(() => {
+		try {
+			process.kill(Number(appPid.trim()), 0);
+			return false;
+		} catch (error) {
+			if (error.code === "ESRCH") return true;
+			throw error;
+		}
+	}, "native close acknowledgement and application exit");
+	checks.push(
+		"OS window-close request completes the native lock acknowledgement and exits",
+	);
 	await writeFile(
 		`${artifacts}/result.json`,
 		JSON.stringify({ checks, details }, null, 2),

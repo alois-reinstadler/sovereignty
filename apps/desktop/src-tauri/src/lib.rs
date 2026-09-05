@@ -1,14 +1,20 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Manager, State, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+mod backup;
 
-const NATIVE_BLUR: &str = "window.dispatchEvent(new CustomEvent('svrgn:desktop-lock',{detail:'native-blur'}));";
-const NATIVE_CLOSE: &str = "window.dispatchEvent(new CustomEvent('svrgn:desktop-lock',{detail:'native-close'}));";
+const NATIVE_BLUR: &str =
+    "window.dispatchEvent(new CustomEvent('svrgn:desktop-lock',{detail:'native-blur'}));";
+const NATIVE_CLOSE: &str =
+    "window.dispatchEvent(new CustomEvent('svrgn:desktop-lock',{detail:'native-close'}));";
 
 #[derive(Default)]
 struct CloseState(AtomicBool);
 
 fn authorize_close(label: &str, pending: &AtomicBool) -> bool {
-    label == "main" && pending.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst).is_ok()
+    label == "main"
+        && pending
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
 }
 
 fn local_navigation(url: &tauri::Url, development: bool, windows: bool) -> bool {
@@ -22,12 +28,22 @@ fn local_navigation(url: &tauri::Url, development: bool, windows: bool) -> bool 
     } else {
         url.scheme() == "tauri" && url.host_str() == Some("localhost") && url.port().is_none()
     };
-    let dev = development && url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port() == Some(1420);
+    let dev = development
+        && url.scheme() == "http"
+        && url.host_str() == Some("127.0.0.1")
+        && url.port() == Some(1420);
     bundled || dev
 }
 
 #[tauri::command]
-async fn desktop_close_ready(window: WebviewWindow, state: State<'_, CloseState>) -> Result<(), String> {
+async fn desktop_close_ready(
+    window: WebviewWindow,
+    state: State<'_, CloseState>,
+    backup: State<'_, backup::BackupState>,
+) -> Result<(), String> {
+    // Serialize acknowledgement with backup startup, including the short gap
+    // after authorize_close consumes the pending flag and before destruction.
+    let _backup_guard = backup::acquire(window.label(), &backup.0)?;
     if !authorize_close(window.label(), &state.0) {
         return Err("No native close request is pending for this window.".into());
     }
@@ -42,9 +58,20 @@ async fn desktop_close_ready(window: WebviewWindow, state: State<'_, CloseState>
 pub fn run() {
     tauri::Builder::default()
         .manage(CloseState::default())
-        .invoke_handler(tauri::generate_handler![desktop_close_ready])
+        .manage(backup::BackupState::default())
+        .invoke_handler(tauri::generate_handler![
+            desktop_close_ready,
+            backup::desktop_export_backup,
+            backup::desktop_import_backup
+        ])
         .setup(|app| {
-            let config = app.config().app.windows.iter().find(|window| window.label == "main").ok_or("Missing main window configuration")?;
+            let config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|window| window.label == "main")
+                .ok_or("Missing main window configuration")?;
             WebviewWindowBuilder::from_config(app, config)?
                 .on_navigation(|url| local_navigation(url, cfg!(dev), cfg!(target_os = "windows")))
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
@@ -52,10 +79,16 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() != "main" { return; }
-            let Some(webview) = window.app_handle().get_webview_window("main") else { return; };
+            if window.label() != "main" {
+                return;
+            }
+            let Some(webview) = window.app_handle().get_webview_window("main") else {
+                return;
+            };
             match event {
-                WindowEvent::Focused(false) => { let _ = webview.eval(NATIVE_BLUR); }
+                WindowEvent::Focused(false) => {
+                    let _ = webview.eval(NATIVE_BLUR);
+                }
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     window.state::<CloseState>().0.store(true, Ordering::SeqCst);
@@ -94,15 +127,48 @@ mod tests {
     }
     #[test]
     fn navigation_is_local_and_exact() {
-        assert!(local_navigation(&"tauri://localhost/".parse().unwrap(), false, false));
-        assert!(!local_navigation(&"http://tauri.localhost/".parse().unwrap(), false, false));
-        assert!(local_navigation(&"http://tauri.localhost/".parse().unwrap(), false, true));
-        assert!(!local_navigation(&"tauri://localhost/".parse().unwrap(), false, true));
-        for url in ["https://example.com", "http://tauri.localhost.evil.test", "tauri://evil.test", "http://127.0.0.1:1420", "file:///tmp/index.html", "data:text/html,test", "http://user@tauri.localhost", "http://tauri.localhost:8080"] {
+        assert!(local_navigation(
+            &"tauri://localhost/".parse().unwrap(),
+            false,
+            false
+        ));
+        assert!(!local_navigation(
+            &"http://tauri.localhost/".parse().unwrap(),
+            false,
+            false
+        ));
+        assert!(local_navigation(
+            &"http://tauri.localhost/".parse().unwrap(),
+            false,
+            true
+        ));
+        assert!(!local_navigation(
+            &"tauri://localhost/".parse().unwrap(),
+            false,
+            true
+        ));
+        for url in [
+            "https://example.com",
+            "http://tauri.localhost.evil.test",
+            "tauri://evil.test",
+            "http://127.0.0.1:1420",
+            "file:///tmp/index.html",
+            "data:text/html,test",
+            "http://user@tauri.localhost",
+            "http://tauri.localhost:8080",
+        ] {
             assert!(!local_navigation(&url.parse().unwrap(), false, false));
             assert!(!local_navigation(&url.parse().unwrap(), false, true));
         }
-        assert!(local_navigation(&"http://127.0.0.1:1420/".parse().unwrap(), true, false));
-        assert!(!local_navigation(&"http://127.0.0.1:1421/".parse().unwrap(), true, false));
+        assert!(local_navigation(
+            &"http://127.0.0.1:1420/".parse().unwrap(),
+            true,
+            false
+        ));
+        assert!(!local_navigation(
+            &"http://127.0.0.1:1421/".parse().unwrap(),
+            true,
+            false
+        ));
     }
 }

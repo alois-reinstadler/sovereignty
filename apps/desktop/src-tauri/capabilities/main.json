@@ -1,7 +1,7 @@
 {
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "main",
-	"description": "The local vault window may acknowledge an already requested native close after locking. No storage, network or key access.",
+	"description": "The local vault window may acknowledge a pending close and select a bounded encrypted backup through an OS dialog. No general filesystem, network or key access.",
 	"windows": ["main"],
-	"permissions": ["allow-complete-close"]
+	"permissions": ["allow-complete-close", "allow-encrypted-backup"]
 }

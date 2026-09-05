@@ -1,8 +1,10 @@
 fn main() {
-    tauri_build::try_build(
-        tauri_build::Attributes::new().app_manifest(
-            tauri_build::AppManifest::new().commands(&["desktop_close_ready"]),
-        ),
-    )
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
+        tauri_build::AppManifest::new().commands(&[
+            "desktop_close_ready",
+            "desktop_export_backup",
+            "desktop_import_backup",
+        ]),
+    ))
     .expect("failed to build Sovereignty desktop permissions");
 }

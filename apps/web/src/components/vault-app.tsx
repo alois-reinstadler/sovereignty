@@ -562,6 +562,7 @@ function VaultView({ accountUserId }: { accountUserId: string | null }) {
 				</label>
 				<BackupControls
 					hasExistingVault
+					requiresLock={IS_DESKTOP}
 					isDisabled={isLocking || isPersisting || isSyncing}
 					onImported={finishBackupImport}
 				/>
