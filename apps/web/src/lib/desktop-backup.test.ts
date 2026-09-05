@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
 	desktop: true,
+	native: true,
 	invoke: vi.fn(),
 	validate: vi.fn(),
 }));
@@ -10,7 +11,10 @@ vi.mock("./client-platform", () => ({
 		return state.desktop;
 	},
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: state.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+	invoke: state.invoke,
+	isTauri: () => state.native,
+}));
 vi.mock("./vault-adapter", () => ({
 	parseEncryptedVaultBackup: state.validate,
 }));
@@ -20,6 +24,7 @@ import { openDesktopBackup, saveDesktopBackup } from "./desktop-backup";
 describe("desktop encrypted backup boundary", () => {
 	beforeEach(() => {
 		state.desktop = true;
+		state.native = true;
 		state.invoke.mockReset();
 		state.validate.mockReset();
 	});
@@ -55,6 +60,16 @@ describe("desktop encrypted backup boundary", () => {
 		state.desktop = false;
 		await expect(saveDesktopBackup("fixture")).rejects.toThrow("unavailable");
 		await expect(openDesktopBackup()).rejects.toThrow("unavailable");
+		expect(state.invoke).not.toHaveBeenCalled();
+	});
+	it("explains the missing bridge in desktop browser previews", async () => {
+		state.native = false;
+		await expect(saveDesktopBackup("fixture")).rejects.toThrow(
+			"Native backups require the desktop application.",
+		);
+		await expect(openDesktopBackup()).rejects.toThrow(
+			"Native backups require the desktop application.",
+		);
 		expect(state.invoke).not.toHaveBeenCalled();
 	});
 });

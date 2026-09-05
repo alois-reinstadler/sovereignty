@@ -102,10 +102,13 @@ export function BackupControls({
 			if (serialized === null) return;
 			if (hasExistingVault) setPendingImport(serialized);
 			else await finishImport(serialized, false);
-		} catch {
+		} catch (cause) {
 			setMessage({
 				type: "error",
-				text: "The selected encrypted backup could not be read.",
+				text:
+					cause instanceof Error
+						? cause.message
+						: "The selected encrypted backup could not be read.",
 			});
 		} finally {
 			setIsWorking(false);
