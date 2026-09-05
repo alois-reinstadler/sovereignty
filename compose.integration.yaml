@@ -34,6 +34,7 @@ services:
       - vitest
       - run
       - src/lib/sync-store.server.integration.test.ts
+      - src/lib/auth.server.integration.test.ts
 
 networks:
   integration:
