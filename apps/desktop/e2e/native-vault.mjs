@@ -3,7 +3,14 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	readdir,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -131,6 +138,12 @@ async function diagnostics() {
 try {
 	await mkdir(artifacts, { recursive: true });
 	storage = await mkdtemp(`${tmpdir()}/sovereignty-native-test-`);
+	await mkdir(`${storage}/config`, { recursive: true });
+	await mkdir(`${storage}/downloads`, { recursive: true });
+	await writeFile(
+		`${storage}/config/user-dirs.dirs`,
+		`XDG_DOWNLOAD_DIR="${storage}/downloads"\n`,
+	);
 	port = await freePort();
 	let nativePort = await freePort();
 	while (nativePort === port) nativePort = await freePort();
@@ -244,6 +257,38 @@ try {
 		false,
 	);
 	checks.push("locking removed credential UI");
+	await button("Export backup");
+	let backupFile;
+	await until(async () => {
+		const files = (await readdir(`${storage}/downloads`)).filter((name) =>
+			name.endsWith(".svrgn"),
+		);
+		if (files.length !== 1) return false;
+		backupFile = `${storage}/downloads/${files[0]}`;
+		return (await readFile(backupFile, "utf8")) === envelope;
+	}, "native encrypted backup download");
+	checks.push("native backup export contains exactly the encrypted envelope");
+	const backupInput = await element('input[name="encrypted-vault-backup"]');
+	await command("POST", `/element/${backupInput}/value`, { text: backupFile });
+	await until(
+		() => visible('[role="alertdialog"]'),
+		"explicit backup overwrite review",
+	);
+	await button("Replace and lock");
+	await until(
+		() =>
+			script(
+				"return !document.querySelector('[role=alertdialog]') && document.body.textContent.includes('Backup imported')",
+			),
+		"native encrypted backup import",
+	);
+	assert.equal(
+		await script("return localStorage.getItem('svrgn.vault.envelope.v1')"),
+		envelope,
+	);
+	checks.push(
+		"native file input restores backup only after explicit overwrite confirmation",
+	);
 	const beforeReload = await diagnostics();
 	assert.deepEqual(beforeReload.errors, []);
 	assert.deepEqual(
@@ -302,6 +347,23 @@ try {
 		[],
 	);
 	checks.push("desktop made no unsupported account or sync requests");
+	const { stdout: appPid } = await run("xdotool", [
+		"getwindowpid",
+		windowId.trim(),
+	]);
+	await run("xdotool", ["windowclose", windowId.trim()]);
+	await until(() => {
+		try {
+			process.kill(Number(appPid.trim()), 0);
+			return false;
+		} catch (error) {
+			if (error.code === "ESRCH") return true;
+			throw error;
+		}
+	}, "native close acknowledgement and application exit");
+	checks.push(
+		"OS window-close request completes the native lock acknowledgement and exits",
+	);
 	await writeFile(
 		`${artifacts}/result.json`,
 		JSON.stringify({ checks, details }, null, 2),
