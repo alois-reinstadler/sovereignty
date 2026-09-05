@@ -1,0 +1,71 @@
+name: iOS development
+
+on:
+  push:
+    branches: [main, "agent/sovereignty-ios-ci"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    name: Native crypto in iOS simulator
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      COCOAPODS_DISABLE_STATS: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Inspect native toolchain
+        run: |
+          xcodebuild -version
+          pod --version
+          xcrun simctl list runtimes
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.24.0 --activate
+      - name: Install pinned JavaScript dependencies and patch
+        run: pnpm install --frozen-lockfile
+      - name: Validate Expo dependency compatibility
+        run: pnpm --filter @svrgn/mobile exec expo install --check
+      - name: Generate simulator project locally
+        run: pnpm --filter @svrgn/mobile exec expo prebuild --platform ios --no-install
+      - name: Install CocoaPods dependencies
+        run: pod install --project-directory=apps/mobile/ios
+      - name: Build unsigned simulator test entry
+        env:
+          ENTRY_FILE: ${{ github.workspace }}/apps/mobile/index.native-test.ts
+        run: |
+          mkdir -p artifacts/ios
+          xcodebuild -workspace apps/mobile/ios/Sovereignty.xcworkspace -scheme Sovereignty -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/sovereignty-ios-build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > artifacts/ios/build.log 2>&1 || { tail -n 180 artifacts/ios/build.log; exit 1; }
+      - name: Run byte-exact interoperability tests in native Hermes
+        env:
+          SVRGN_IOS_APP_PATH: ${{ runner.temp }}/sovereignty-ios-build/Build/Products/Release-iphonesimulator/Sovereignty.app
+        run: node scripts/native/ios-test.mjs
+      # Test reports and dependency metadata only. Never publish app binaries.
+      - name: Preserve native test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-native-evidence
+          path: |
+            artifacts/ios/
+            apps/mobile/ios/Podfile.lock
+          if-no-files-found: warn
+          retention-days: 3
