@@ -41,9 +41,9 @@ async fn desktop_close_ready(
     state: State<'_, CloseState>,
     backup: State<'_, backup::BackupState>,
 ) -> Result<(), String> {
-    if backup.0.load(Ordering::SeqCst) {
-        return Err("Finish or cancel the backup dialog, then close again.".into());
-    }
+    // Serialize acknowledgement with backup startup, including the short gap
+    // after authorize_close consumes the pending flag and before destruction.
+    let _backup_guard = backup::acquire(window.label(), &backup.0)?;
     if !authorize_close(window.label(), &state.0) {
         return Err("No native close request is pending for this window.".into());
     }

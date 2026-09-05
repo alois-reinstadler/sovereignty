@@ -116,6 +116,15 @@ async function screenshot(name) {
 	const encoded = await command("GET", "/screenshot");
 	await writeFile(`${artifacts}/${name}.png`, Buffer.from(encoded, "base64"));
 }
+async function nativeDialog(title) {
+	await until(async () => {
+		const { stdout } = await run("xdotool", [
+			"getactivewindow",
+			"getwindowname",
+		]);
+		return stdout.includes(title);
+	}, `native dialog: ${title}`);
+}
 async function diagnostics() {
 	return script(`return {
     url: location.href,
@@ -239,6 +248,21 @@ try {
 		);
 	}
 	checks.push("saved login and checked persisted envelope excludes plaintext");
+	assert.equal(
+		await script(
+			`return [...document.querySelectorAll('button')].some(e => /^(Import|Export) backup$/.test(e.textContent.trim()))`,
+		),
+		false,
+	);
+	assert.equal(
+		await script(
+			"return document.body.textContent.includes('Lock the vault to import or export encrypted backups.')",
+		),
+		true,
+	);
+	checks.push(
+		"unlocked desktop requires explicit lock before backup dialogs to preserve callbacks",
+	);
 	await screenshot("vault");
 	await button("Lock vault");
 	await until(() => visible('input[name="master-password"]'), "manual lock");
@@ -250,15 +274,34 @@ try {
 		false,
 	);
 	checks.push("locking removed credential UI");
+	const invalidNativeExport = await command("POST", "/execute/async", {
+		script: `const done = arguments[arguments.length - 1];
+		window.__TAURI_INTERNALS__.invoke('desktop_export_backup', {serialized: '{"password":"synthetic only"}'}).then(() => done(false), () => done(true));`,
+		args: [],
+	});
+	assert.equal(invalidNativeExport, true);
+	checks.push(
+		"actual native command rejects plaintext before opening a dialog",
+	);
+	await button("Export backup");
+	await nativeDialog("Save encrypted Sovereignty backup");
+	await run("xdotool", ["key", "--clearmodifiers", "Escape"]);
+	await until(
+		() =>
+			script(
+				"return [...document.querySelectorAll('button')].some(e => e.textContent.trim().endsWith('Export backup') && !e.disabled)",
+			),
+		"cancelled backup releases operation",
+	);
+	assert.equal(
+		await script("return localStorage.getItem('svrgn.vault.envelope.v1')"),
+		envelope,
+	);
+	checks.push("cancelling native export preserves the vault and permits retry");
 	await button("Export backup");
 	const backupFile = `${storage}/downloads/native-backup.svrgn`;
-	await until(async () => {
-		const { stdout } = await run("xdotool", [
-			"getactivewindow",
-			"getwindowname",
-		]);
-		return stdout.includes("Save encrypted Sovereignty backup");
-	}, "native save dialog");
+	await nativeDialog("Save encrypted Sovereignty backup");
+	await run("scrot", [`${artifacts}/backup-save-dialog.png`]);
 	await run("xdotool", ["key", "--clearmodifiers", "ctrl+a"]);
 	await run("xdotool", ["type", "--clearmodifiers", "--", backupFile]);
 	await run("xdotool", ["key", "--clearmodifiers", "Return"]);
@@ -275,16 +318,14 @@ try {
 		"saved confirmation",
 	);
 	await button("Import backup");
-	await until(async () => {
-		const { stdout } = await run("xdotool", [
-			"getactivewindow",
-			"getwindowname",
-		]);
-		return stdout.includes("Open encrypted Sovereignty backup");
-	}, "native open dialog");
+	await nativeDialog("Open encrypted Sovereignty backup");
+	await run("scrot", [`${artifacts}/backup-open-dialog.png`]);
 	await run("xdotool", ["key", "--clearmodifiers", "ctrl+l"]);
 	await run("xdotool", ["type", "--clearmodifiers", "--", backupFile]);
 	await run("xdotool", ["key", "--clearmodifiers", "Return"]);
+	// GTK resolves the location entry before its explicit Open action.
+	await delay(500);
+	await run("xdotool", ["key", "--clearmodifiers", "alt+o"]);
 	await until(
 		() => visible('[role="alertdialog"]'),
 		"explicit backup overwrite review",
@@ -293,7 +334,7 @@ try {
 	await until(
 		() =>
 			script(
-				"return !document.querySelector('[role=alertdialog]') && document.body.textContent.includes('Backup imported')",
+				"return !document.querySelector('[role=alertdialog]') && document.body.textContent.includes('Encrypted backup imported.')",
 			),
 		"native encrypted backup import",
 	);

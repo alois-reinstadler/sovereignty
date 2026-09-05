@@ -13,12 +13,14 @@ import {
 type BackupControlsProps = {
 	hasExistingVault: boolean;
 	isDisabled?: boolean;
+	requiresLock?: boolean;
 	onImported: () => Promise<void> | void;
 };
 
 export function BackupControls({
 	hasExistingVault,
 	isDisabled = false,
+	requiresLock = false,
 	onImported,
 }: BackupControlsProps) {
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -28,6 +30,12 @@ export function BackupControls({
 		type: "error" | "success";
 		text: string;
 	} | null>(null);
+	if (requiresLock)
+		return (
+			<p className="backup-lock-notice">
+				Lock the vault to import or export encrypted backups.
+			</p>
+		);
 
 	const finishImport = async (
 		serialized: string,

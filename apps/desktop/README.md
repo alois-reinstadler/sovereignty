@@ -81,9 +81,10 @@ the native notification reached JavaScript.
 Locks invalidate in-progress key derivation and clear master-password,
 confirmation and reveal drafts even while locked or creating a vault. The
 credential form resets without unmounting the encrypted backup picker on an
-already locked screen. Import while locked to keep file selection and overwrite
-confirmation stable. Import from an unlocked screen may be interrupted by the
-mandatory focus-loss lock; reopen Import backup from the locked screen if needed.
+already locked screen. Desktop backup actions are available only while locked,
+with an explicit explanation in the unlocked sidebar. This keeps file selection
+and overwrite confirmation in the stable locked view while OS dialogs trigger
+the mandatory focus-loss lock.
 
 A lock during encryption immediately hides secret UI and denies new reads,
 copies or saves. Key closure queues behind the started write. A clipboard write

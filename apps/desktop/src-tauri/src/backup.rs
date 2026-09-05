@@ -92,7 +92,7 @@ pub fn validate(serialized: &str) -> Result<(), String> {
 
 #[derive(Default)]
 pub struct BackupState(pub AtomicBool);
-struct BackupGuard<'a>(&'a AtomicBool);
+pub struct BackupGuard<'a>(&'a AtomicBool);
 impl Drop for BackupGuard<'_> {
     fn drop(&mut self) {
         self.0.store(false, Ordering::SeqCst);
@@ -103,8 +103,14 @@ fn begin<'a>(
     busy: &'a AtomicBool,
     closing: &AtomicBool,
 ) -> Result<BackupGuard<'a>, String> {
+    let guard = acquire(label, busy)?;
+    if closing.load(Ordering::SeqCst) {
+        return Err("Backup unavailable while the window is closing.".into());
+    }
+    Ok(guard)
+}
+pub fn acquire<'a>(label: &str, busy: &'a AtomicBool) -> Result<BackupGuard<'a>, String> {
     if label != "main"
-        || closing.load(Ordering::SeqCst)
         || busy
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
